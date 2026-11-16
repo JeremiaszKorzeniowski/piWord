@@ -38,8 +38,10 @@ sudo systemctl enable piword.service
 mkdir -p "$HOME/.local/bin"
 ln -sfn "$project_dir/scripts/update.sh" "$HOME/.local/bin/xd"
 ln -sfn "$project_dir/scripts/update.sh" "$HOME/.local/bin/xdver"
+ln -sfn "$project_dir/scripts/db.sh" "$HOME/.local/bin/xdb"
 
 echo "Usluga zainstalowana. Uruchom: sudo systemctl start piword.service"
 echo "Aktualizacja: $HOME/.local/bin/xd"
 echo "Wersja:      $HOME/.local/bin/xdver"
+echo "Baza:        $HOME/.local/bin/xdb"
 

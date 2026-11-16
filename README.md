@@ -104,6 +104,28 @@ offline komenda:
 xdver
 ```
 
+## Podgląd bazy przez SSH
+
+Komenda `xdb` otwiera bazę tylko do odczytu:
+
+```bash
+xdb                       # liczba fiszek w każdym poziomie
+xdb search go             # szukanie w słowie, formach i tłumaczeniu
+xdb list A1 --limit 50    # lista słów z poziomu A1
+xdb card 123              # wszystkie pola rekordu o ID 123
+```
+
+SQLite nie jest serwerem, więc tunel SSH w DBeaver nie wystarczy. Aby otworzyć
+bezpieczną, spójną kopię bazy w DBeaver, najpierw utwórz snapshot:
+
+```bash
+xdb snapshot
+```
+
+Komenda wypisze ścieżkę, np. `/home/pi/piword-20261116-180000.db`. Pobierz ten
+plik na komputer poleceniem `scp`, a następnie otwórz lokalny plik sterownikiem
+SQLite w DBeaver. Snapshot nie zatrzymuje działającej aplikacji.
+
 ## Podgląd bez sprzętu
 
 ```bash
