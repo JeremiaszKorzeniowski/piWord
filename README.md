@@ -56,6 +56,44 @@ python3 -m piword run
 
 Baza użytkownika powstaje w `~/.local/share/piword/piword.db`.
 
+## Usługa i autostart
+
+Po ręcznym sprawdzeniu ekranu i przycisków zainstaluj usługę:
+
+```bash
+bash scripts/install-service.sh
+sudo systemctl start piword.service
+systemctl status piword.service --no-pager
+```
+
+Instalator uruchamiaj jako zwykły użytkownik, bez `sudo`. Sam poprosi o
+uprawnienia wyłącznie przy instalacji jednostki systemd. Ustawia autostart oraz
+dowiązania `~/.local/bin/xd` i `~/.local/bin/xdver`.
+
+## Aktualizacja przez SSH
+
+```bash
+xd
+```
+
+Skrypt wymaga czystej gałęzi `main`, wykonuje `git fetch`, akceptuje wyłącznie
+aktualizację fast-forward i przed zmianą pyta o potwierdzenie. Po aktualizacji
+restartuje `piword.service` i pokazuje jej stan. Nie nadpisuje lokalnych zmian,
+nie aktualizuje w tle i nie zmienia konfiguracji sprzętu.
+
+Jeżeli powłoka nie znajduje polecenia `xd`, uruchom:
+
+```bash
+~/.local/bin/xd
+```
+
+Informacje o zainstalowanej wersji, commicie i usłudze pokazuje działająca
+offline komenda:
+
+```bash
+xdver
+```
+
 ## Podgląd bez sprzętu
 
 ```bash

@@ -1,0 +1,17 @@
+[Unit]
+Description=piWord e-paper flashcards
+After=local-fs.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@PROJECT_DIR@
+ExecStart=/usr/bin/python3 -u -m piword run
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target
+
