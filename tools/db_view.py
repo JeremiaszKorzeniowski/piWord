@@ -40,9 +40,9 @@ def summary(connection: sqlite3.Connection) -> None:
     total = connection.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
     print(f"Baza: {total} fiszek\n")
     rows = connection.execute(
-        """SELECT level AS poziom, COUNT(*) AS fiszki
-           FROM cards GROUP BY level
-           ORDER BY CASE level
+        """SELECT mode AS jezyk, level AS poziom, COUNT(*) AS fiszki
+           FROM cards GROUP BY mode, level
+           ORDER BY mode, CASE level
                WHEN 'A1' THEN 1 WHEN 'A2' THEN 2 WHEN 'B1' THEN 3
                WHEN 'B2' THEN 4 WHEN 'C1' THEN 5 WHEN 'C2' THEN 6 ELSE 7 END"""
     ).fetchall()
@@ -79,7 +79,7 @@ def main() -> None:
         elif args.command == "search":
             phrase = f"%{args.text}%"
             rows = connection.execute(
-                """SELECT id, level, front, forms, back FROM cards
+                """SELECT id, mode, level, front, forms, back FROM cards
                    WHERE front LIKE ? OR back LIKE ? OR forms LIKE ?
                    ORDER BY level, front LIMIT ?""",
                 (phrase, phrase, phrase, max(1, min(args.limit, 500))),
@@ -87,7 +87,7 @@ def main() -> None:
             print_rows(rows)
         elif args.command == "list":
             rows = connection.execute(
-                """SELECT id, level, front, forms, back FROM cards
+                """SELECT id, mode, level, front, forms, back FROM cards
                    WHERE (? IS NULL OR level = ?)
                    ORDER BY front LIMIT ?""",
                 (args.level, args.level, max(1, min(args.limit, 500))),

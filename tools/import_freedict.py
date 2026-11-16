@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from piword.cards import CardStore, MODE_EN_PL, default_database_path
+from piword.cards import CardStore, MODES, MODE_EN_PL, default_database_path
 
 
 TEI = "{http://www.tei-c.org/ns/1.0}"
@@ -37,7 +37,7 @@ def xml_files(source: Path) -> list[Path]:
         return [source]
     letters = source / "letters"
     directory = letters if letters.is_dir() else source
-    return sorted(directory.glob("*.xml"))
+    return sorted((*directory.glob("*.xml"), *directory.glob("*.tei")))
 
 
 LEVEL_ORDER = {level: index for index, level in enumerate(("A1", "A2", "B1", "B2", "C1", "C2"))}
@@ -48,8 +48,15 @@ def load_levels(paths: list[Path]) -> dict[str, str]:
     for path in paths:
         with path.open("r", encoding="utf-8-sig", newline="") as handle:
             for row in csv.DictReader(handle):
-                headword = (row.get("headword") or "").strip().casefold()
-                level = (row.get("CEFR") or "").strip().upper()
+                headword = (
+                    row.get("headword")
+                    or row.get("lemma")
+                    or row.get("Target language lemma")
+                    or ""
+                ).strip().casefold()
+                level = (
+                    row.get("CEFR") or row.get("cefr_level") or row.get("Level") or ""
+                ).strip().upper()
                 if not headword or level not in LEVEL_ORDER:
                     continue
                 previous = levels.get(headword)
@@ -58,13 +65,26 @@ def load_levels(paths: list[Path]) -> dict[str, str]:
     return levels
 
 
-def parse_file(path: Path, allowed: set[str] | None, levels: dict[str, str]):
+def parse_file(
+    path: Path,
+    allowed: set[str] | None,
+    levels: dict[str, str],
+    mode: str,
+    headword_language: str,
+    source_name: str,
+):
     for _, entry in ET.iterparse(path, events=("end",)):
         if entry.tag != f"{TEI}entry":
             continue
         headword = ""
-        for form in entry.findall(f"{TEI}form"):
-            if form.get(XML_LANG) in (None, "en"):
+        forms = entry.findall(f"{TEI}form")
+        for form in forms:
+            if form.get(XML_LANG) in (None, headword_language):
+                headword = text(form.find(f"{TEI}orth"))
+                if headword:
+                    break
+        if not headword:
+            for form in forms:
                 headword = text(form.find(f"{TEI}orth"))
                 if headword:
                     break
@@ -79,13 +99,13 @@ def parse_file(path: Path, allowed: set[str] | None, levels: dict[str, str]):
         pos = text(entry.find(f".//{TEI}pos"))
         if translations:
             yield (
-                MODE_EN_PL,
+                mode,
                 headword,
                 "; ".join(translations[:4]),
                 "",
                 levels.get(headword.casefold(), "OTHER"),
                 pos,
-                "FreeDict eng-pol",
+                source_name,
             )
         entry.clear()
 
@@ -95,6 +115,9 @@ def main() -> None:
     parser.add_argument("source", type=Path, help="katalog eng-pol, letters albo pojedynczy XML")
     parser.add_argument("--database", type=Path, default=default_database_path())
     parser.add_argument("--word-list", type=Path)
+    parser.add_argument("--mode", choices=MODES, default=MODE_EN_PL)
+    parser.add_argument("--headword-language", default="en")
+    parser.add_argument("--source-name", default="FreeDict eng-pol")
     parser.add_argument(
         "--cefr",
         type=Path,
@@ -114,11 +137,20 @@ def main() -> None:
     store.initialize()
     added = 0
     for path in files:
-        added += store.add_cards(parse_file(path, allowed, levels))
-    assigned = store.assign_levels(levels) if levels else 0
+        added += store.add_cards(
+            parse_file(
+                path,
+                allowed,
+                levels,
+                args.mode,
+                args.headword_language,
+                args.source_name,
+            )
+        )
+    assigned = store.assign_levels(levels, mode=args.mode) if levels else 0
     print(f"Dodano {added} fiszek z {len(files)} plików XML")
     print(f"Przypisano poziom do {assigned} rekordów")
-    counts = store.level_counts()
+    counts = store.level_counts(args.mode)
     print("Poziomy: " + ", ".join(f"{level}={counts[level]}" for level in sorted(counts)))
 
 

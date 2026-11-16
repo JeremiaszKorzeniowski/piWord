@@ -29,3 +29,28 @@ Należy cytować ją zgodnie z informacją podaną przez projekt CEFR-J.
 
 Lista uzupełnia klasyfikację o poziomy C1 i C2. Hasła, których nie ma na
 żadnej z list poziomów, są oznaczane jako `OTHER`.
+
+## FreeDict Russian–Polish i Spanish–Polish
+
+- Słowniki `rus-pol` i `spa-pol`, wydanie 2025.11.23
+- Adres: <https://freedict.org/downloads/>
+- Dane pochodzą z projektu FreeDict/WikDict; szczegóły autorstwa i licencji
+  znajdują się w metadanych każdego pobieranego słownika.
+
+## SMARTool — poziomy rosyjskie
+
+- Autorzy: zespół SMARTool, UiT The Arctic University of Norway i partnerzy
+- DOI: <https://doi.org/10.18710/QNAPNE>
+- Repozytorium: <https://github.com/smartool/data-rus-eng>
+- Licencja: Creative Commons Attribution 4.0 International
+
+Lista obejmuje około 3000 rosyjskich leksemów na poziomach A1–B2.
+
+## Orientacyjne poziomy hiszpańskie
+
+- Repozytorium: <https://github.com/Talhakasikci/cefr-vocabulary-dataset>
+- Zakres użycia deklarowany przez autora: projekty osobiste i edukacyjne
+
+Jest to nieoficjalna lista społecznościowa i może zawierać błędy. piWord używa
+jej wyłącznie do orientacyjnego podziału A1–B2. Nieprzypisane hasła pozostają
+w grupie `OTHER`.

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from .cards import Card
+from .cards import Card, MODE_LABELS
 
 
 WIDTH = 250
@@ -57,7 +57,8 @@ def _fit_font(draw: ImageDraw.ImageDraw, text: str, max_width: int, max_size: in
 def render_card(card: Card, revealed: bool, message: str = "") -> Image.Image:
     image = Image.new("1", (WIDTH, HEIGHT), 255)
     draw = ImageDraw.Draw(image)
-    header = "EN -> PL" if card.level == "OTHER" else f"EN -> PL  {card.level}"
+    mode_label = MODE_LABELS.get(card.mode, card.mode.upper())
+    header = mode_label if card.level == "OTHER" else f"{mode_label}  {card.level}"
     draw.text((6, 3), header, font=_font(11, bold=True), fill=0)
     draw.line((5, 18, WIDTH - 6, 18), fill=0, width=1)
 

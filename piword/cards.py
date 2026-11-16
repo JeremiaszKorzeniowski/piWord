@@ -10,6 +10,15 @@ from typing import Iterable, Iterator
 
 
 MODE_EN_PL = "en_pl"
+MODE_RU_PL = "ru_pl"
+MODE_ES_PL = "es_pl"
+MODES = (MODE_EN_PL, MODE_RU_PL, MODE_ES_PL)
+MODE_LABELS = {
+    MODE_EN_PL: "EN -> PL",
+    MODE_RU_PL: "RU -> PL",
+    MODE_ES_PL: "ES -> PL",
+}
+LEVELS = ("A1", "A2", "B1", "B2", "C1", "C2", "OTHER")
 
 
 @dataclass(frozen=True)
@@ -68,6 +77,7 @@ class CardStore:
                     seen_count INTEGER NOT NULL DEFAULT 0,
                     correct_count INTEGER NOT NULL DEFAULT 0,
                     due_at INTEGER NOT NULL DEFAULT 0,
+                    learned INTEGER NOT NULL DEFAULT 0,
                     UNIQUE(mode, front, back)
                 );
                 CREATE INDEX IF NOT EXISTS cards_due_idx ON cards(mode, due_at);
@@ -83,6 +93,10 @@ class CardStore:
             if "level" not in columns:
                 connection.execute(
                     "ALTER TABLE cards ADD COLUMN level TEXT NOT NULL DEFAULT 'OTHER'"
+                )
+            if "learned" not in columns:
+                connection.execute(
+                    "ALTER TABLE cards ADD COLUMN learned INTEGER NOT NULL DEFAULT 0"
                 )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS cards_level_due_idx ON cards(mode, level, due_at)"
@@ -185,7 +199,8 @@ class CardStore:
         query = """
             SELECT id, mode, front, back, forms, level, note, source
             FROM cards
-            WHERE mode = ? AND (? IS NULL OR level = ?) AND (? IS NULL OR id != ?)
+            WHERE mode = ? AND learned = 0
+              AND (? IS NULL OR level = ?) AND (? IS NULL OR id != ?)
             ORDER BY CASE WHEN due_at <= ? THEN 0 ELSE 1 END,
                      due_at,
                      RANDOM()
@@ -199,7 +214,7 @@ class CardStore:
                 row = connection.execute(
                     """SELECT id, mode, front, back, forms, level, note, source
                        FROM cards
-                       WHERE mode = ? AND (? IS NULL OR level = ?)
+                       WHERE mode = ? AND learned = 0 AND (? IS NULL OR level = ?)
                        LIMIT 1""",
                     (mode, level, level),
                 ).fetchone()
@@ -223,6 +238,45 @@ class CardStore:
                    WHERE id = ?""",
                 (streak, due_at, card_id),
             )
+
+    def mark_learned(self, card_id: int) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE cards
+                   SET learned = 1, seen_count = seen_count + 1,
+                       correct_count = correct_count + 1
+                   WHERE id = ?""",
+                (card_id,),
+            )
+
+    def available_modes(self) -> list[str]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT DISTINCT mode FROM cards ORDER BY mode"
+            ).fetchall()
+        present = {str(row[0]) for row in rows}
+        return [mode for mode in MODES if mode in present]
+
+    def available_levels(self, mode: str) -> list[str]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT DISTINCT level FROM cards
+                   WHERE mode = ? AND learned = 0""",
+                (mode,),
+            ).fetchall()
+        present = {str(row[0]) for row in rows}
+        return [level for level in LEVELS if level in present]
+
+    def reset_progress(self) -> int:
+        with self.connect() as connection:
+            learned = connection.execute(
+                "SELECT COUNT(*) FROM cards WHERE learned != 0"
+            ).fetchone()[0]
+            connection.execute(
+                """UPDATE cards SET learned = 0, streak = 0, seen_count = 0,
+                   correct_count = 0, due_at = 0"""
+            )
+        return int(learned)
 
     def mark_again(self, card_id: int) -> None:
         due_at = int(time.time()) + 600

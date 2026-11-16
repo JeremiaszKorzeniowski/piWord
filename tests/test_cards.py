@@ -39,6 +39,21 @@ class CardStoreTests(unittest.TestCase):
             self.assertEqual(card.front, "go")
             self.assertEqual(card.level, "A1")
 
+    def test_learned_cards_are_hidden_and_reset_restores_them(self):
+        with TemporaryDirectory() as directory:
+            store = CardStore(Path(directory) / "cards.db")
+            store.initialize()
+            card = store.next_card()
+            store.mark_learned(card.id)
+            following = store.next_card(exclude_id=card.id)
+            self.assertNotEqual(card.id, following.id)
+            self.assertEqual(store.reset_progress(), 1)
+            with store.connect() as connection:
+                learned = connection.execute(
+                    "SELECT learned FROM cards WHERE id = ?", (card.id,)
+                ).fetchone()[0]
+            self.assertEqual(learned, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

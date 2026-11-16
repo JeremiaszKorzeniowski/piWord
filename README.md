@@ -1,16 +1,18 @@
 # piWord
 
 Małe urządzenie do nauki słów zbudowane z Raspberry Pi Zero W,
-wyświetlacza Waveshare 2.13" V2 (250x122) i dwóch przycisków.
+wyświetlacza Waveshare 2.13" V2 (250x122) i trzech przycisków.
 
 ## Wersja 1
 
-Pierwsza wersja obsługuje tryb `EN -> PL`:
+Obsługiwane tryby to `EN -> PL`, `RU -> PL` i `ES -> PL`:
 
-- przycisk 1, GPIO5: pokaż tłumaczenie; ponowne naciśnięcie oznacza
-  „powtórz” i przechodzi do następnej fiszki,
-- przycisk 2, GPIO6: oznacz „umiem” i przejdź dalej,
-- długie naciśnięcia są zarezerwowane na zmianę kierunku i trybu,
+- B1, GPIO5: pokaż tłumaczenie; ponowne naciśnięcie przechodzi dalej,
+- przytrzymanie B1 przez 3 sekundy: oznacz „umiem” i trwale ukryj fiszkę,
+- B2, GPIO6: przełącz język,
+- B3, GPIO13: przełącz poziom `ALL`, A1–C2 lub `OTHER`,
+- jednoczesne przytrzymanie B2+B3 przez 10 sekund: wyzeruj cały postęp;
+  słowniki nie są wtedy usuwane,
 - postęp jest zapisywany lokalnie w SQLite,
 - aplikacja działa bez internetu.
 
@@ -132,24 +134,24 @@ SQLite w DBeaver. Snapshot nie zatrzymuje działającej aplikacji.
 python -m piword preview --output preview.png
 ```
 
-## Pełny słownik i poziomy CEFR
+## Pełne słowniki i poziomy CEFR
 
-Karta 32 GB ma bardzo duży zapas: archiwum FreeDict ma mniej niż 1 MB, a po
-imporcie baza SQLite nadal zajmuje tylko niewielką część karty. Po aktualizacji
-programu przez `xd` uruchom jednorazowo:
+Karta 32 GB ma bardzo duży zapas. Po aktualizacji programu przez `xd` uruchom
+jednorazowo:
 
 ```bash
 bash ~/piWord/scripts/install-dictionary.sh
 ```
 
-Skrypt pobiera pełny FreeDict EN–PL, sprawdza sumę SHA-512, pobiera listy
-poziomów i importuje wszystko do `~/.local/share/piword/piword.db`. Na czas
-importu zatrzymuje usługę `piword.service`, a po zakończeniu uruchamia ją
-ponownie. Na końcu wypisuje liczbę haseł w A1, A2, B1, B2, C1, C2 i `OTHER`.
+Skrypt pobiera FreeDict EN–PL, RU–PL i ES–PL, sprawdza sumy SHA-512, pobiera
+listy poziomów i importuje wszystko do `~/.local/share/piword/piword.db`. Na
+czas importu zatrzymuje usługę `piword.service`, a po zakończeniu uruchamia ją
+ponownie. Angielski ma podział A1–C2, rosyjski i hiszpański A1–B2; pozostałe
+hasła trafiają do `OTHER`.
 
-Poziom rozpoznanej fiszki jest pokazany w nagłówku ekranu. Wybieranie jednej
-grupy poziomów przyciskami dodamy razem z menu trybów; baza już przechowuje
-grupy osobno i potrafi losować tylko ze wskazanego poziomu.
+Język i poziom bieżącej fiszki są pokazane w nagłówku ekranu.
+
+Trzeci przycisk podłącz między GPIO13 (fizyczny pin 33) i GND (pin 34).
 
 ## Ręczny import FreeDict
 
