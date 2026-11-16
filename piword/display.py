@@ -14,25 +14,35 @@ WIDTH = 250
 HEIGHT = 122
 
 
-def _font_path(bold: bool = False) -> str:
-    names = (
-        "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf",
-        "DejaVuSans.ttf",
+def _font_candidates(bold: bool = False) -> tuple[Path, ...]:
+    name = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
+    waveshare_pic = (
+        Path.home()
+        / "e-Paper"
+        / "RaspberryPi_JetsonNano"
+        / "python"
+        / "pic"
+        / "Font.ttc"
     )
-    roots = (
-        Path("/usr/share/fonts/truetype/dejavu"),
-        Path("C:/Windows/Fonts"),
+    return (
+        Path("/usr/share/fonts/truetype/dejavu") / name,
+        Path("/usr/share/fonts/dejavu") / name,
+        waveshare_pic,
+        Path("C:/Windows/Fonts") / name,
     )
-    for root in roots:
-        for name in names:
-            candidate = root / name
-            if candidate.exists():
-                return str(candidate)
-    return names[0]
 
 
-def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(_font_path(bold), size)
+def _font(size: int, bold: bool = False):
+    for candidate in _font_candidates(bold):
+        if not candidate.is_file():
+            continue
+        try:
+            return ImageFont.truetype(str(candidate), size)
+        except OSError:
+            continue
+    # Awaryjny font Pillow nie ma pelnego zestawu polskich znakow, ale pozwala
+    # pokazac komunikat i nie wpadać usludze w petle restartow.
+    return ImageFont.load_default()
 
 
 def _fit_font(draw: ImageDraw.ImageDraw, text: str, max_width: int, max_size: int, min_size: int = 14):

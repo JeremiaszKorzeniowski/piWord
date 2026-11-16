@@ -42,6 +42,10 @@ Wymagane pakiety systemowe:
 sudo apt install -y python3-pil python3-gpiozero python3-spidev fonts-dejavu-core
 ```
 
+Aplikacja korzysta z DejaVu Sans, a jeśli pakiet fontów nie jest dostępny,
+próbuje użyć `Font.ttc` z oficjalnego repozytorium Waveshare. Brak obu fontów
+nie powoduje pętli restartów usługi — uruchamiany jest awaryjny font Pillow.
+
 Repozytorium Waveshare powinno znajdować się w:
 
 ```text
