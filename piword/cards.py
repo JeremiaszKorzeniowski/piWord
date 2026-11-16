@@ -12,13 +12,23 @@ from typing import Iterable, Iterator
 MODE_EN_PL = "en_pl"
 MODE_RU_PL = "ru_pl"
 MODE_ES_PL = "es_pl"
-MODES = (MODE_EN_PL, MODE_RU_PL, MODE_ES_PL)
+MODE_PL_DICT = "pl_dict"
+MODE_PL_FOREIGN = "pl_foreign"
+MODES = (MODE_EN_PL, MODE_RU_PL, MODE_ES_PL, MODE_PL_DICT, MODE_PL_FOREIGN)
 MODE_LABELS = {
     MODE_EN_PL: "EN -> PL",
     MODE_RU_PL: "RU -> PL",
     MODE_ES_PL: "ES -> PL",
+    MODE_PL_DICT: "SJP",
+    MODE_PL_FOREIGN: "OBCE",
 }
-LEVELS = ("A1", "A2", "B1", "B2", "C1", "C2", "OTHER")
+REVERSE_MODE_LABELS = {
+    MODE_EN_PL: "PL -> EN",
+    MODE_RU_PL: "PL -> RU",
+    MODE_ES_PL: "PL -> ES",
+}
+LEVELS = ("A1", "A2", "B1", "B2", "C1", "C2", "TRUDNE", "OBCE", "OTHER")
+DAILY_GOAL = 20
 
 
 @dataclass(frozen=True)
@@ -31,6 +41,7 @@ class Card:
     level: str = "OTHER"
     note: str = ""
     source: str = ""
+    example: str = ""
 
 
 def default_database_path() -> Path:
@@ -43,6 +54,14 @@ def default_seed_path() -> Path:
 
 def default_irregular_path() -> Path:
     return Path(__file__).resolve().parent.parent / "data" / "irregular_verbs_en_pl.csv"
+
+
+def default_polish_paths() -> tuple[tuple[Path, str, str], ...]:
+    data = Path(__file__).resolve().parent.parent / "data"
+    return (
+        (data / "polish_dictionary.csv", MODE_PL_DICT, "piWord słownik polski"),
+        (data / "polish_foreign.csv", MODE_PL_FOREIGN, "piWord wyrazy obce"),
+    )
 
 
 class CardStore:
@@ -78,6 +97,9 @@ class CardStore:
                     correct_count INTEGER NOT NULL DEFAULT 0,
                     due_at INTEGER NOT NULL DEFAULT 0,
                     learned INTEGER NOT NULL DEFAULT 0,
+                    difficult INTEGER NOT NULL DEFAULT 0,
+                    introduced_on TEXT,
+                    example TEXT NOT NULL DEFAULT '',
                     UNIQUE(mode, front, back)
                 );
                 CREATE INDEX IF NOT EXISTS cards_due_idx ON cards(mode, due_at);
@@ -98,6 +120,16 @@ class CardStore:
                 connection.execute(
                     "ALTER TABLE cards ADD COLUMN learned INTEGER NOT NULL DEFAULT 0"
                 )
+            if "difficult" not in columns:
+                connection.execute(
+                    "ALTER TABLE cards ADD COLUMN difficult INTEGER NOT NULL DEFAULT 0"
+                )
+            if "introduced_on" not in columns:
+                connection.execute("ALTER TABLE cards ADD COLUMN introduced_on TEXT")
+            if "example" not in columns:
+                connection.execute(
+                    "ALTER TABLE cards ADD COLUMN example TEXT NOT NULL DEFAULT ''"
+                )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS cards_level_due_idx ON cards(mode, level, due_at)"
             )
@@ -105,9 +137,11 @@ class CardStore:
         if count == 0:
             self.import_csv(seed_path or default_seed_path(), source="piWord seed v1")
         self.import_irregular_csv(default_irregular_path())
+        for path, mode, source in default_polish_paths():
+            self.import_csv(path, source=source, mode=mode)
 
-    def import_csv(self, path: Path, source: str) -> int:
-        rows: list[tuple[str, str, str, str, str, str, str]] = []
+    def import_csv(self, path: Path, source: str, mode: str = MODE_EN_PL) -> int:
+        rows: list[tuple[str, str, str, str, str, str, str, str]] = []
         with Path(path).open("r", encoding="utf-8-sig", newline="") as handle:
             for row in csv.DictReader(handle):
                 front = row.get("front", "").strip()
@@ -115,19 +149,20 @@ class CardStore:
                 if front and back:
                     rows.append(
                         (
-                            MODE_EN_PL,
+                            mode,
                             front,
                             back,
                             row.get("forms", "").strip(),
                             row.get("level", "OTHER").strip().upper() or "OTHER",
                             row.get("note", "").strip(),
                             source,
+                            row.get("example", "").strip(),
                         )
                     )
         return self.add_cards(rows)
 
     def import_irregular_csv(self, path: Path) -> int:
-        rows: list[tuple[str, str, str, str, str, str, str]] = []
+        rows: list[tuple[str, str, str, str, str, str, str, str]] = []
         with Path(path).open("r", encoding="utf-8-sig", newline="") as handle:
             for row in csv.DictReader(handle):
                 front = row.get("front", "").strip()
@@ -143,14 +178,15 @@ class CardStore:
                             "OTHER",
                             "irregular verb",
                             "piWord irregular verbs",
+                            "",
                         )
                     )
         with self.connect() as connection:
             before = connection.total_changes
             connection.executemany(
                 """
-                INSERT INTO cards(mode, front, back, forms, level, note, source)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO cards(mode, front, back, forms, level, note, source, example)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(mode, front, back) DO UPDATE SET
                     forms = excluded.forms,
                     note = excluded.note
@@ -159,13 +195,21 @@ class CardStore:
             )
             return connection.total_changes - before
 
-    def add_cards(self, rows: Iterable[tuple[str, str, str, str, str, str, str]]) -> int:
+    def add_cards(
+        self, rows: Iterable[tuple[str, str, str, str, str, str, str, str]]
+    ) -> int:
         with self.connect() as connection:
             before = connection.total_changes
             connection.executemany(
                 """
-                INSERT OR IGNORE INTO cards(mode, front, back, forms, level, note, source)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO cards(mode, front, back, forms, level, note, source, example)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(mode, front, back) DO UPDATE SET
+                    forms = CASE WHEN excluded.forms != '' THEN excluded.forms ELSE cards.forms END,
+                    level = excluded.level,
+                    note = CASE WHEN excluded.note != '' THEN excluded.note ELSE cards.note END,
+                    source = excluded.source,
+                    example = CASE WHEN excluded.example != '' THEN excluded.example ELSE cards.example END
                 """,
                 rows,
             )
@@ -197,11 +241,12 @@ class CardStore:
     ) -> Card:
         now = int(time.time())
         query = """
-            SELECT id, mode, front, back, forms, level, note, source
+            SELECT id, mode, front, back, forms, level, note, source, example
             FROM cards
             WHERE mode = ? AND learned = 0
               AND (? IS NULL OR level = ?) AND (? IS NULL OR id != ?)
             ORDER BY CASE WHEN due_at <= ? THEN 0 ELSE 1 END,
+                     difficult DESC,
                      due_at,
                      RANDOM()
             LIMIT 1
@@ -212,7 +257,7 @@ class CardStore:
             ).fetchone()
             if row is None and exclude_id is not None:
                 row = connection.execute(
-                    """SELECT id, mode, front, back, forms, level, note, source
+                    """SELECT id, mode, front, back, forms, level, note, source, example
                        FROM cards
                        WHERE mode = ? AND learned = 0 AND (? IS NULL OR level = ?)
                        LIMIT 1""",
@@ -249,6 +294,43 @@ class CardStore:
                 (card_id,),
             )
 
+    def mark_seen(self, card_id: int) -> bool:
+        today = time.strftime("%Y-%m-%d")
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT introduced_on FROM cards WHERE id = ?", (card_id,)
+            ).fetchone()
+            if row is None or row[0] is not None:
+                return False
+            connection.execute(
+                "UPDATE cards SET introduced_on = ? WHERE id = ?", (today, card_id)
+            )
+        return True
+
+    def toggle_difficult(self, card_id: int) -> bool:
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE cards SET difficult = CASE difficult WHEN 0 THEN 1 ELSE 0 END WHERE id = ?",
+                (card_id,),
+            )
+            row = connection.execute(
+                "SELECT difficult FROM cards WHERE id = ?", (card_id,)
+            ).fetchone()
+        return bool(row and row[0])
+
+    def statistics(self) -> dict[str, int]:
+        today = time.strftime("%Y-%m-%d")
+        with self.connect() as connection:
+            row = connection.execute(
+                """SELECT COUNT(*) AS total,
+                          SUM(CASE WHEN learned != 0 THEN 1 ELSE 0 END) AS learned,
+                          SUM(CASE WHEN difficult != 0 THEN 1 ELSE 0 END) AS difficult,
+                          SUM(CASE WHEN introduced_on = ? THEN 1 ELSE 0 END) AS today
+                   FROM cards""",
+                (today,),
+            ).fetchone()
+        return {name: int(row[name] or 0) for name in ("total", "learned", "difficult", "today")}
+
     def available_modes(self) -> list[str]:
         with self.connect() as connection:
             rows = connection.execute(
@@ -274,7 +356,8 @@ class CardStore:
             ).fetchone()[0]
             connection.execute(
                 """UPDATE cards SET learned = 0, streak = 0, seen_count = 0,
-                   correct_count = 0, due_at = 0"""
+                   correct_count = 0, due_at = 0, difficult = 0,
+                   introduced_on = NULL"""
             )
         return int(learned)
 

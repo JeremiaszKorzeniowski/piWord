@@ -97,6 +97,13 @@ def parse_file(
             if value and value not in translations:
                 translations.append(value)
         pos = text(entry.find(f".//{TEI}pos"))
+        example = ""
+        for citation in entry.findall(f".//{TEI}cit[@type='example']"):
+            quote = citation.find(f"{TEI}quote")
+            if quote is not None and quote.get(XML_LANG) in (None, headword_language):
+                example = text(quote)
+                if example:
+                    break
         if translations:
             yield (
                 mode,
@@ -106,6 +113,7 @@ def parse_file(
                 levels.get(headword.casefold(), "OTHER"),
                 pos,
                 source_name,
+                example,
             )
         entry.clear()
 

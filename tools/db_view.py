@@ -39,6 +39,16 @@ def print_rows(rows: list[sqlite3.Row]) -> None:
 def summary(connection: sqlite3.Connection) -> None:
     total = connection.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
     print(f"Baza: {total} fiszek\n")
+    progress = connection.execute(
+        """SELECT SUM(learned != 0) AS learned,
+                  SUM(difficult != 0) AS difficult,
+                  SUM(introduced_on = date('now', 'localtime')) AS today
+           FROM cards"""
+    ).fetchone()
+    print(
+        f"Umiem: {progress['learned'] or 0}; trudne: {progress['difficult'] or 0}; "
+        f"nowe dzisiaj: {progress['today'] or 0}/20\n"
+    )
     rows = connection.execute(
         """SELECT mode AS jezyk, level AS poziom, COUNT(*) AS fiszki
            FROM cards GROUP BY mode, level
@@ -79,7 +89,7 @@ def main() -> None:
         elif args.command == "search":
             phrase = f"%{args.text}%"
             rows = connection.execute(
-                """SELECT id, mode, level, front, forms, back FROM cards
+                """SELECT id, mode, level, difficult, front, forms, back FROM cards
                    WHERE front LIKE ? OR back LIKE ? OR forms LIKE ?
                    ORDER BY level, front LIMIT ?""",
                 (phrase, phrase, phrase, max(1, min(args.limit, 500))),
@@ -87,7 +97,7 @@ def main() -> None:
             print_rows(rows)
         elif args.command == "list":
             rows = connection.execute(
-                """SELECT id, mode, level, front, forms, back FROM cards
+                """SELECT id, mode, level, difficult, front, forms, back FROM cards
                    WHERE (? IS NULL OR level = ?)
                    ORDER BY front LIMIT ?""",
                 (args.level, args.level, max(1, min(args.limit, 500))),

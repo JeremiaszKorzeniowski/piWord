@@ -5,12 +5,13 @@ import threading
 import time
 from pathlib import Path
 
-from .cards import MODE_LABELS, Card, CardStore
+from .cards import DAILY_GOAL, REVERSE_MODE_LABELS, MODE_LABELS, Card, CardStore
 from .display import WaveshareDisplay
 
 
 LEARNED_HOLD_SECONDS = 3.0
 RESET_HOLD_SECONDS = 10.0
+DOUBLE_CLICK_SECONDS = 0.45
 
 
 class ButtonEvents:
@@ -21,6 +22,7 @@ class ButtonEvents:
         self.pressed_at: dict[str, float] = {}
         self.suppressed_releases: set[str] = set()
         self.combo_timer: threading.Timer | None = None
+        self.button1_click_timer: threading.Timer | None = None
         self.lock = threading.Lock()
         self.button1 = Button(5, pull_up=True, bounce_time=0.05)
         self.button2 = Button(6, pull_up=True, bounce_time=0.05)
@@ -58,10 +60,38 @@ class ButtonEvents:
                 self.suppressed_releases.discard(name)
                 return
         duration = time.monotonic() - started
-        if name == "button1" and duration >= LEARNED_HOLD_SECONDS:
-            self.events.put("button1_long")
+        if duration >= LEARNED_HOLD_SECONDS:
+            if name == "button1":
+                self._cancel_button1_click()
+            self.events.put(f"{name}_long")
+        elif name == "button1":
+            self._button1_click()
         else:
             self.events.put(f"{name}_short")
+
+    def _button1_click(self) -> None:
+        with self.lock:
+            if self.button1_click_timer is not None:
+                self.button1_click_timer.cancel()
+                self.button1_click_timer = None
+                self.events.put("button1_double")
+                return
+            self.button1_click_timer = threading.Timer(
+                DOUBLE_CLICK_SECONDS, self._emit_button1_short
+            )
+            self.button1_click_timer.daemon = True
+            self.button1_click_timer.start()
+
+    def _emit_button1_short(self) -> None:
+        with self.lock:
+            self.button1_click_timer = None
+        self.events.put("button1_short")
+
+    def _cancel_button1_click(self) -> None:
+        with self.lock:
+            if self.button1_click_timer is not None:
+                self.button1_click_timer.cancel()
+                self.button1_click_timer = None
 
     def _reset_combo(self) -> None:
         with self.lock:
@@ -73,6 +103,8 @@ class ButtonEvents:
         with self.lock:
             if self.combo_timer is not None:
                 self.combo_timer.cancel()
+            if self.button1_click_timer is not None:
+                self.button1_click_timer.cancel()
         for button in self.buttons.values():
             button.close()
 
@@ -98,21 +130,39 @@ def run_hardware(database_path: Path) -> None:
     buttons = ButtonEvents()
     mode = store.available_modes()[0]
     level: str | None = None
+    reversed_direction = False
     card, level = _next_for_mode(store, mode, level)
     revealed = False
-    display.show_card(card, revealed, "B1: pokaz  B2: jezyk  B3: poziom")
+    display.show_card(
+        card, revealed, "B1: pokaz  B2: jezyk  B3: poziom", reversed_direction
+    )
 
     try:
         while True:
             event = buttons.events.get()
             if event == "button1_short":
                 if not revealed:
+                    store.mark_seen(card.id)
                     revealed = True
                 else:
                     store.mark_again(card.id)
                     card, level = _next_for_mode(store, mode, level, card.id)
                     revealed = False
-                display.show_card(card, revealed, "B1: dalej  przytrzymaj 3s: umiem")
+                stats = store.statistics()
+                display.show_card(
+                    card,
+                    revealed,
+                    f"dzis: {stats['today']}/{DAILY_GOAL}",
+                    reversed_direction,
+                )
+            elif event == "button1_double":
+                difficult = store.toggle_difficult(card.id)
+                display.show_card(
+                    card,
+                    revealed,
+                    "oznaczono: trudne" if difficult else "usunieto oznaczenie: trudne",
+                    reversed_direction,
+                )
             elif event == "button1_long":
                 store.mark_learned(card.id)
                 try:
@@ -128,7 +178,7 @@ def run_hardware(database_path: Path) -> None:
                             continue
                     message = "ukryto; brak kolejnych w grupie"
                 revealed = False
-                display.show_card(card, revealed, message)
+                display.show_card(card, revealed, message, reversed_direction)
             elif event == "button2_short":
                 modes = store.available_modes()
                 start = modes.index(mode) if mode in modes else -1
@@ -140,22 +190,59 @@ def run_hardware(database_path: Path) -> None:
                         continue
                     mode, level, card = candidate, None, candidate_card
                     break
+                if mode not in REVERSE_MODE_LABELS:
+                    reversed_direction = False
                 revealed = False
-                display.show_card(card, revealed, f"jezyk: {MODE_LABELS[mode]}")
+                display.show_card(
+                    card, revealed, f"jezyk: {MODE_LABELS[mode]}", reversed_direction
+                )
+            elif event == "button2_long":
+                if mode in REVERSE_MODE_LABELS:
+                    reversed_direction = not reversed_direction
+                    revealed = False
+                    direction = (
+                        REVERSE_MODE_LABELS[mode]
+                        if reversed_direction
+                        else MODE_LABELS[mode]
+                    )
+                    message = f"kierunek: {direction}"
+                else:
+                    message = "ten tryb ma jeden kierunek"
+                display.show_card(card, revealed, message, reversed_direction)
             elif event == "button3_short":
                 choices: list[str | None] = [None, *store.available_levels(mode)]
                 current = choices.index(level) if level in choices else 0
                 level = choices[(current + 1) % len(choices)]
                 card, level = _next_for_mode(store, mode, level)
                 revealed = False
-                display.show_card(card, revealed, f"poziom: {level or 'ALL'}")
+                display.show_card(
+                    card, revealed, f"poziom: {level or 'ALL'}", reversed_direction
+                )
+            elif event == "button3_long":
+                stats = store.statistics()
+                display.show_status(
+                    "STATYSTYKI",
+                    [
+                        f"Dzisiaj: {stats['today']}/{DAILY_GOAL}",
+                        f"Umiem: {stats['learned']}",
+                        f"Trudne: {stats['difficult']}",
+                        f"W bazie: {stats['total']}",
+                    ],
+                )
             elif event == "reset_arming":
-                display.show_card(card, revealed, "B2+B3: trzymaj 10 sekund")
+                display.show_card(
+                    card, revealed, "B2+B3: trzymaj 10 sekund", reversed_direction
+                )
             elif event == "reset_progress":
                 reset_count = store.reset_progress()
                 card, level = _next_for_mode(store, mode, level)
                 revealed = False
-                display.show_card(card, revealed, f"reset: przywrocono {reset_count}")
+                display.show_card(
+                    card,
+                    revealed,
+                    f"reset: przywrocono {reset_count}",
+                    reversed_direction,
+                )
     except KeyboardInterrupt:
         pass
     finally:

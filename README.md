@@ -5,21 +5,34 @@ wyświetlacza Waveshare 2.13" V2 (250x122) i trzech przycisków.
 
 ## Wersja 1
 
-Obsługiwane tryby to `EN -> PL`, `RU -> PL` i `ES -> PL`:
+Obsługiwane tryby to `EN -> PL`, `RU -> PL`, `ES -> PL`, `SJP` i `OBCE`:
 
 - B1, GPIO5: pokaż tłumaczenie; ponowne naciśnięcie przechodzi dalej,
 - przytrzymanie B1 przez 3 sekundy: oznacz „umiem” i trwale ukryj fiszkę,
+- podwójne naciśnięcie B1: włącz lub wyłącz oznaczenie „trudne”,
 - B2, GPIO6: przełącz język,
+- przytrzymanie B2 przez 3 sekundy: odwróć kierunek PL ↔ język obcy,
 - B3, GPIO13: przełącz poziom `ALL`, A1–C2 lub `OTHER`,
+- przytrzymanie B3 przez 3 sekundy: pokaż statystyki i dzienny cel,
 - jednoczesne przytrzymanie B2+B3 przez 10 sekund: wyzeruj cały postęp;
   słowniki nie są wtedy usuwane,
 - postęp jest zapisywany lokalnie w SQLite,
 - aplikacja działa bez internetu.
 
+Dzienny cel wynosi 20 nowych słów. Słowo jest liczone przy pierwszym odsłonięciu
+tłumaczenia danego dnia. Statystyki pokazują także liczbę słów ukrytych jako
+„umiem” i oznaczonych jako trudne.
+
 Czasowniki nieregularne pokazują na przedniej stronie wszystkie trzy formy,
 np. `go`, a pod nim `went - gone`. Przycisk 1 odsłania polskie tłumaczenie.
 Lista startowa znajduje się w `data/irregular_verbs_en_pl.csv` i jest
 automatycznie dołączana także do już istniejącej bazy SQLite.
+
+Tryby `SJP` i `OBCE` mają startowe, redagowane dla piWord zestawy trudnych słów
+z krótkimi definicjami i przykładami zdań. Pliki źródłowe to
+`data/polish_dictionary.csv` i `data/polish_foreign.csv`; można je rozwijać
+niezależnie od programu. Jeśli fiszka zawiera przykład, pojawia się on po
+odsłonięciu odpowiedzi.
 
 Konfiguracja ekranu używa standardowych linii SPI oraz niestandardowego
 `RST = GPIO23`. W bibliotece Waveshare pierwsza definicja `RST_PIN` w

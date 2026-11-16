@@ -54,6 +54,20 @@ class CardStoreTests(unittest.TestCase):
                 ).fetchone()[0]
             self.assertEqual(learned, 0)
 
+    def test_polish_modes_examples_and_daily_statistics(self):
+        with TemporaryDirectory() as directory:
+            store = CardStore(Path(directory) / "cards.db")
+            store.initialize()
+            self.assertIn("pl_dict", store.available_modes())
+            card = store.next_card(mode="pl_dict")
+            self.assertTrue(card.example)
+            self.assertTrue(store.mark_seen(card.id))
+            self.assertFalse(store.mark_seen(card.id))
+            self.assertTrue(store.toggle_difficult(card.id))
+            stats = store.statistics()
+            self.assertEqual(stats["today"], 1)
+            self.assertEqual(stats["difficult"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
