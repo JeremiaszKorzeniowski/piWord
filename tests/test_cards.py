@@ -29,6 +29,16 @@ class CardStoreTests(unittest.TestCase):
             self.assertIsNotNone(row)
             self.assertEqual(row[1], "went - gone")
 
+    def test_levels_can_be_assigned_and_filtered(self):
+        with TemporaryDirectory() as directory:
+            store = CardStore(Path(directory) / "cards.db")
+            store.initialize()
+            changed = store.assign_levels({"go": "A1"})
+            self.assertGreaterEqual(changed, 1)
+            card = store.next_card(level="A1")
+            self.assertEqual(card.front, "go")
+            self.assertEqual(card.level, "A1")
+
 
 if __name__ == "__main__":
     unittest.main()

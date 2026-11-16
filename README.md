@@ -35,9 +35,10 @@ Do pierwszego uruchomienia dołączony jest niewielki zestaw testowy w
 
 Repozytorium: https://github.com/freedict/fd-dictionaries/tree/master/eng-pol
 
-Nie będziemy losować bezpośrednio ze wszystkich 16 tysięcy haseł. Importer
-potrafi przyjąć listę wybranych słów, dzięki czemu później zbudujemy poziomy
-np. A1, A2 i B1 zamiast pokazywać przypadkowe archaizmy.
+Importer przypisuje poziomy A1–B2 na podstawie CEFR-J Vocabulary Profile,
+a C1–C2 z listy Octanove. Słowa, których nie ma na tych listach, trafiają do
+grupy `OTHER` — poziom nie jest zgadywany. Szczegóły źródeł i licencji są w
+`ATTRIBUTION.md`.
 
 ## Uruchomienie na Raspberry Pi
 
@@ -109,14 +110,35 @@ xdver
 python -m piword preview --output preview.png
 ```
 
-## Import FreeDict
+## Pełny słownik i poziomy CEFR
+
+Karta 32 GB ma bardzo duży zapas: archiwum FreeDict ma mniej niż 1 MB, a po
+imporcie baza SQLite nadal zajmuje tylko niewielką część karty. Po aktualizacji
+programu przez `xd` uruchom jednorazowo:
+
+```bash
+bash ~/piWord/scripts/install-dictionary.sh
+```
+
+Skrypt pobiera pełny FreeDict EN–PL, sprawdza sumę SHA-512, pobiera listy
+poziomów i importuje wszystko do `~/.local/share/piword/piword.db`. Na czas
+importu zatrzymuje usługę `piword.service`, a po zakończeniu uruchamia ją
+ponownie. Na końcu wypisuje liczbę haseł w A1, A2, B1, B2, C1, C2 i `OTHER`.
+
+Poziom rozpoznanej fiszki jest pokazany w nagłówku ekranu. Wybieranie jednej
+grupy poziomów przyciskami dodamy razem z menu trybów; baza już przechowuje
+grupy osobno i potrafi losować tylko ze wskazanego poziomu.
+
+## Ręczny import FreeDict
 
 Po pobraniu repozytorium FreeDict:
 
 ```bash
 python tools/import_freedict.py \
   /sciezka/fd-dictionaries/eng-pol/letters \
-  --database ~/.local/share/piword/piword.db
+  --database ~/.local/share/piword/piword.db \
+  --cefr /sciezka/cefrj-vocabulary-profile-1.5.csv \
+  --cefr /sciezka/octanove-vocabulary-profile-c1c2-1.0.csv
 ```
 
 Opcjonalny plik `--word-list` powinien zawierać po jednym angielskim słowie
