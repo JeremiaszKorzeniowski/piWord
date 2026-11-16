@@ -14,6 +14,11 @@ Pierwsza wersja obsługuje tryb `EN -> PL`:
 - postęp jest zapisywany lokalnie w SQLite,
 - aplikacja działa bez internetu.
 
+Czasowniki nieregularne pokazują na przedniej stronie wszystkie trzy formy,
+np. `go`, a pod nim `went - gone`. Przycisk 1 odsłania polskie tłumaczenie.
+Lista startowa znajduje się w `data/irregular_verbs_en_pl.csv` i jest
+automatycznie dołączana także do już istniejącej bazy SQLite.
+
 Konfiguracja ekranu używa standardowych linii SPI oraz niestandardowego
 `RST = GPIO23`. W bibliotece Waveshare pierwsza definicja `RST_PIN` w
 `waveshare_epd/epdconfig.py` musi mieć wartość `23`.

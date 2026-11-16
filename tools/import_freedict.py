@@ -59,7 +59,14 @@ def parse_file(path: Path, allowed: set[str] | None):
                 translations.append(value)
         pos = text(entry.find(f".//{TEI}pos"))
         if translations:
-            yield (MODE_EN_PL, headword, "; ".join(translations[:4]), pos, "FreeDict eng-pol")
+            yield (
+                MODE_EN_PL,
+                headword,
+                "; ".join(translations[:4]),
+                "",
+                pos,
+                "FreeDict eng-pol",
+            )
         entry.clear()
 
 

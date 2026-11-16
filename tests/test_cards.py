@@ -18,6 +18,17 @@ class CardStoreTests(unittest.TestCase):
             self.assertNotEqual(first.id, second.id)
             store.mark_again(second.id)
 
+    def test_irregular_verbs_include_three_forms(self):
+        with TemporaryDirectory() as directory:
+            store = CardStore(Path(directory) / "cards.db")
+            store.initialize()
+            with store.connect() as connection:
+                row = connection.execute(
+                    "SELECT front, forms FROM cards WHERE front = 'go'"
+                ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(row[1], "went - gone")
+
 
 if __name__ == "__main__":
     unittest.main()

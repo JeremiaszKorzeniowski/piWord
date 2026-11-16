@@ -60,22 +60,32 @@ def render_card(card: Card, revealed: bool, message: str = "") -> Image.Image:
     draw.text((6, 3), "EN -> PL", font=_font(11, bold=True), fill=0)
     draw.line((5, 18, WIDTH - 6, 18), fill=0, width=1)
 
-    front_font = _fit_font(draw, card.front, WIDTH - 16, 37)
+    front_max_size = 31 if card.forms else 37
+    front_y = 22 if card.forms else 24
+    front_font = _fit_font(draw, card.front, WIDTH - 16, front_max_size)
     front_box = draw.textbbox((0, 0), card.front, font=front_font)
     front_width = front_box[2] - front_box[0]
-    draw.text(((WIDTH - front_width) // 2, 24), card.front, font=front_font, fill=0)
+    draw.text(((WIDTH - front_width) // 2, front_y), card.front, font=front_font, fill=0)
+
+    if card.forms:
+        forms_font = _fit_font(draw, card.forms, WIDTH - 16, 20, 11)
+        forms_box = draw.textbbox((0, 0), card.forms, font=forms_font)
+        forms_width = forms_box[2] - forms_box[0]
+        draw.text(((WIDTH - forms_width) // 2, 55), card.forms, font=forms_font, fill=0)
 
     if revealed:
         answer = card.back
-        answer_font = _fit_font(draw, answer, WIDTH - 16, 23, 12)
+        answer_font = _fit_font(draw, answer, WIDTH - 16, 19 if card.forms else 23, 11)
         answer_box = draw.textbbox((0, 0), answer, font=answer_font)
         answer_width = answer_box[2] - answer_box[0]
-        draw.text(((WIDTH - answer_width) // 2, 70), answer, font=answer_font, fill=0)
+        answer_y = 82 if card.forms else 70
+        draw.text(((WIDTH - answer_width) // 2, answer_y), answer, font=answer_font, fill=0)
     else:
         hint = "nacisnij B1"
-        hint_font = _font(14)
+        hint_font = _font(12 if card.forms else 14)
         hint_box = draw.textbbox((0, 0), hint, font=hint_font)
-        draw.text(((WIDTH - (hint_box[2] - hint_box[0])) // 2, 76), hint, font=hint_font, fill=0)
+        hint_y = 84 if card.forms else 76
+        draw.text(((WIDTH - (hint_box[2] - hint_box[0])) // 2, hint_y), hint, font=hint_font, fill=0)
 
     if message:
         footer_font = _font(9)

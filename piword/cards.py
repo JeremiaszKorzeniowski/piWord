@@ -17,6 +17,7 @@ class Card:
     mode: str
     front: str
     back: str
+    forms: str = ""
     note: str = ""
     source: str = ""
 
@@ -27,6 +28,10 @@ def default_database_path() -> Path:
 
 def default_seed_path() -> Path:
     return Path(__file__).resolve().parent.parent / "data" / "seed_en_pl.csv"
+
+
+def default_irregular_path() -> Path:
+    return Path(__file__).resolve().parent.parent / "data" / "irregular_verbs_en_pl.csv"
 
 
 class CardStore:
@@ -48,6 +53,7 @@ class CardStore:
                     mode TEXT NOT NULL,
                     front TEXT NOT NULL,
                     back TEXT NOT NULL,
+                    forms TEXT NOT NULL DEFAULT '',
                     note TEXT NOT NULL DEFAULT '',
                     source TEXT NOT NULL DEFAULT '',
                     streak INTEGER NOT NULL DEFAULT 0,
@@ -59,27 +65,69 @@ class CardStore:
                 CREATE INDEX IF NOT EXISTS cards_due_idx ON cards(mode, due_at);
                 """
             )
+            columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(cards)").fetchall()
+            }
+            if "forms" not in columns:
+                connection.execute(
+                    "ALTER TABLE cards ADD COLUMN forms TEXT NOT NULL DEFAULT ''"
+                )
             count = connection.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
         if count == 0:
             self.import_csv(seed_path or default_seed_path(), source="piWord seed v1")
+        self.import_irregular_csv(default_irregular_path())
 
     def import_csv(self, path: Path, source: str) -> int:
-        rows: list[tuple[str, str, str, str, str]] = []
+        rows: list[tuple[str, str, str, str, str, str]] = []
         with Path(path).open("r", encoding="utf-8-sig", newline="") as handle:
             for row in csv.DictReader(handle):
                 front = row.get("front", "").strip()
                 back = row.get("back", "").strip()
                 if front and back:
-                    rows.append((MODE_EN_PL, front, back, row.get("note", "").strip(), source))
+                    rows.append(
+                        (
+                            MODE_EN_PL,
+                            front,
+                            back,
+                            row.get("forms", "").strip(),
+                            row.get("note", "").strip(),
+                            source,
+                        )
+                    )
         return self.add_cards(rows)
 
-    def add_cards(self, rows: Iterable[tuple[str, str, str, str, str]]) -> int:
+    def import_irregular_csv(self, path: Path) -> int:
+        rows: list[tuple[str, str, str, str, str, str]] = []
+        with Path(path).open("r", encoding="utf-8-sig", newline="") as handle:
+            for row in csv.DictReader(handle):
+                front = row.get("front", "").strip()
+                back = row.get("back", "").strip()
+                forms = row.get("forms", "").strip()
+                if front and back and forms:
+                    rows.append(
+                        (MODE_EN_PL, front, back, forms, "irregular verb", "piWord irregular verbs")
+                    )
         with self.connect() as connection:
             before = connection.total_changes
             connection.executemany(
                 """
-                INSERT OR IGNORE INTO cards(mode, front, back, note, source)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO cards(mode, front, back, forms, note, source)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(mode, front, back) DO UPDATE SET
+                    forms = excluded.forms,
+                    note = excluded.note
+                """,
+                rows,
+            )
+            return connection.total_changes - before
+
+    def add_cards(self, rows: Iterable[tuple[str, str, str, str, str, str]]) -> int:
+        with self.connect() as connection:
+            before = connection.total_changes
+            connection.executemany(
+                """
+                INSERT OR IGNORE INTO cards(mode, front, back, forms, note, source)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 rows,
             )
@@ -88,7 +136,7 @@ class CardStore:
     def next_card(self, mode: str = MODE_EN_PL, exclude_id: int | None = None) -> Card:
         now = int(time.time())
         query = """
-            SELECT id, mode, front, back, note, source
+            SELECT id, mode, front, back, forms, note, source
             FROM cards
             WHERE mode = ? AND (? IS NULL OR id != ?)
             ORDER BY CASE WHEN due_at <= ? THEN 0 ELSE 1 END,
@@ -100,7 +148,7 @@ class CardStore:
             row = connection.execute(query, (mode, exclude_id, exclude_id, now)).fetchone()
             if row is None and exclude_id is not None:
                 row = connection.execute(
-                    """SELECT id, mode, front, back, note, source
+                    """SELECT id, mode, front, back, forms, note, source
                        FROM cards WHERE mode = ? LIMIT 1""",
                     (mode,),
                 ).fetchone()
