@@ -9,11 +9,11 @@ Obsługiwane tryby to `EN -> PL`, `RU -> PL`, `ES -> PL`, `SJP` i `OBCE`:
 
 | Przycisk | Krótko | Długo / specjalnie |
 | --- | --- | --- |
-| B1, GPIO5 | pokaż tłumaczenie; ponownie: następna fiszka | 3 s: oznacz „umiem” i ukryj fiszkę |
-| B1 ×2 | włącz lub wyłącz oznaczenie „trudne” | — |
+| B1, GPIO5 | pokaż tłumaczenie; ponownie: „jeszcze raz” i powrót słowa po 3 fiszkach | 3 s: „umiem” i zaplanuj dalszą powtórkę |
+| B1 ×2 | oznacz „trudne”; po odsłonięciu odpowiedzi słowo wróci po 1 fiszce | — |
 | B2, GPIO6 | przełącz poziom: `ALL`, A1–C2, `TRUDNE`, `OBCE` lub `OTHER` | 3 s: pokaż statystyki i dzienny cel |
 | B3, GPIO13 | przełącz język / tryb | 3 s: odwróć kierunek PL ↔ język obcy |
-| B2 + B3 | przełącz zbiór tematyczny | 10 s: wyzeruj cały postęp; słowniki pozostają |
+| B2 + B3 | przełącz zbiór tematyczny | 10 s: wyzeruj postęp aktywnego profilu; słowniki pozostają |
 
 - nagłówek zawsze pokazuje kierunek języka i zbiór bieżącej fiszki,
 - postęp jest zapisywany lokalnie w SQLite,
@@ -35,7 +35,28 @@ piWord, a nie kopią treści podręcznika.
 
 Dzienny cel wynosi 20 nowych słów. Słowo jest liczone przy pierwszym odsłonięciu
 tłumaczenia danego dnia. Statystyki pokazują także liczbę słów ukrytych jako
-„umiem” i oznaczonych jako trudne.
+„umiem” lub zaplanowanych do dalszej powtórki oraz oznaczonych jako trudne.
+
+## Powtórki i sesje
+
+Domyślny algorytm `loop` tworzy sesję z maksymalnie 20 fiszek. Najpierw wybiera
+zaległe powtórki, a wolne miejsca uzupełnia nowymi słowami do dziennego limitu.
+„Jeszcze raz” wkłada słowo z powrotem do kolejki po trzech innych kartach,
+„trudne” po jednej, a „umiem” usuwa je z bieżącej pętli i wyznacza kolejną
+powtórkę po 1, 3, 7, 14, 30 lub 60 dniach. Trudne słowa mają krótsze odstępy.
+
+W bazie pozostaje również algorytm `legacy`, zachowujący wcześniejsze działanie.
+Wybór algorytmu jest celowo ukryty; zostanie podłączony do menu ustawień po
+zamontowaniu enkoderów.
+
+## Profile użytkowników
+
+Słowniki i zbiory tematyczne są wspólne, ale każdy profil ma osobno zapisywane:
+poznane i trudne słowa, kolejkę powtórek, dzienny postęp, statystyki oraz wybrany
+algorytm nauki. Przy aktualizacji dotychczasowy postęp jest automatycznie
+przenoszony do profilu `Domyślny`, więc nic nie przepada. Obsługa profili jest
+już gotowa w bazie; wybór i tworzenie profilu zostaną pokazane dopiero w menu
+ustawień obsługiwanym enkoderami.
 
 Czasowniki nieregularne pokazują na przedniej stronie wszystkie trzy formy,
 np. `go`, a pod nim `went - gone`. Przycisk 1 odsłania polskie tłumaczenie.
@@ -145,7 +166,11 @@ xdb card 123              # wszystkie pola rekordu o ID 123
 xdb stats                 # postęp według języka i wszystkich tematów
 xdb stats --mode en_pl    # tematy tylko dla angielskiego
 xdb stats --topic COLORS  # szczegóły wybranego tematu we wszystkich językach
+xdb profiles              # profile, aktywny profil i liczba rozpoczętych słów
 ```
+
+Wszystkie wyniki `xdb`, łącznie ze statystykami i oznaczeniem trudnych słów,
+dotyczą aktualnie aktywnego profilu.
 
 SQLite nie jest serwerem, więc tunel SSH w DBeaver nie wystarczy. Aby otworzyć
 bezpieczną, spójną kopię bazy w DBeaver, najpierw utwórz snapshot:

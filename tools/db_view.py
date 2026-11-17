@@ -46,14 +46,32 @@ def print_rows(rows: list[sqlite3.Row]) -> None:
     print_table(headers, values)
 
 
+def active_profile(connection: sqlite3.Connection) -> tuple[int, str]:
+    row = connection.execute(
+        """SELECT profiles.id, profiles.name FROM profiles
+           JOIN settings ON settings.key = 'active_profile_id'
+                        AND settings.value = CAST(profiles.id AS TEXT)"""
+    ).fetchone()
+    if row is None:
+        row = connection.execute("SELECT id, name FROM profiles ORDER BY id LIMIT 1").fetchone()
+    if row is None:
+        raise SystemExit("Brak profilu w bazie. Uruchom najpierw piWord.")
+    return int(row["id"]), str(row["name"])
+
+
 def summary(connection: sqlite3.Connection) -> None:
+    profile_id, profile_name = active_profile(connection)
     total = connection.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
-    print(f"Baza: {total} fiszek\n")
+    print(f"Profil: {profile_name}; baza: {total} fiszek\n")
     progress = connection.execute(
-        """SELECT SUM(learned != 0) AS learned,
-                  SUM(difficult != 0) AS difficult,
-                  SUM(introduced_on = date('now', 'localtime')) AS today
-           FROM cards"""
+        """SELECT SUM(COALESCE(progress.learned, 0) != 0
+                       OR COALESCE(progress.streak, 0) > 0) AS learned,
+                  SUM(COALESCE(progress.difficult, 0) != 0) AS difficult,
+                  SUM(progress.introduced_on = date('now', 'localtime')) AS today
+           FROM cards
+           LEFT JOIN card_progress AS progress
+             ON progress.card_id = cards.id AND progress.profile_id = ?""",
+        (profile_id,),
     ).fetchone()
     print(
         f"Umiem: {progress['learned'] or 0}; trudne: {progress['difficult'] or 0}; "
@@ -74,25 +92,34 @@ def thematic_statistics(
     mode: str | None = None,
     topic: str | None = None,
 ) -> None:
+    profile_id, profile_name = active_profile(connection)
     mode_label = MODE_LABELS.get(mode, "WSZYSTKIE")
     topic_label = TOPIC_LABELS.get(topic, "WSZYSTKIE")
-    print(f"Statystyki: jezyk={mode_label}; temat={topic_label}\n")
+    print(
+        f"Statystyki: profil={profile_name}; jezyk={mode_label}; temat={topic_label}\n"
+    )
 
     language_rows = connection.execute(
         """SELECT mode,
                   COUNT(*) AS total,
-                  SUM(introduced_on IS NOT NULL) AS introduced,
-                  SUM(learned != 0) AS learned,
-                  SUM(difficult != 0) AS difficult,
-                  SUM(introduced_on = date('now', 'localtime')) AS today
+                  SUM(progress.introduced_on IS NOT NULL) AS introduced,
+                  SUM(COALESCE(progress.learned, 0) != 0
+                      OR COALESCE(progress.streak, 0) > 0) AS learned,
+                  SUM(COALESCE(progress.difficult, 0) != 0) AS difficult,
+                  SUM(progress.introduced_on = date('now', 'localtime')) AS today,
+                  SUM(COALESCE(progress.learned, 0) = 0
+                      AND progress.introduced_on IS NOT NULL
+                      AND progress.due_at <= strftime('%s', 'now')) AS due
            FROM cards
+           LEFT JOIN card_progress AS progress
+             ON progress.card_id = cards.id AND progress.profile_id = ?
            WHERE (? IS NULL OR mode = ?)
              AND (? IS NULL OR EXISTS (
                  SELECT 1 FROM card_topics
                  WHERE card_id = cards.id AND topic = ?
              ))
            GROUP BY mode ORDER BY mode""",
-        (mode, mode, topic, topic),
+        (profile_id, mode, mode, topic, topic),
     ).fetchall()
     language_values = []
     for row in language_rows:
@@ -106,28 +133,44 @@ def thematic_statistics(
                 str(learned),
                 str(int(row["difficult"] or 0)),
                 str(int(row["today"] or 0)),
+                str(int(row["due"] or 0)),
                 f"{(100 * learned / total):.1f}%" if total else "0.0%",
             ]
         )
     print("JEZYKI")
     print_table(
-        ["jezyk", "fiszki", "poznane", "umiem", "trudne", "dzisiaj", "postep"],
+        [
+            "jezyk",
+            "fiszki",
+            "poznane",
+            "umiem",
+            "trudne",
+            "dzisiaj",
+            "powtorki",
+            "postep",
+        ],
         language_values,
     )
 
     topic_rows = connection.execute(
         """SELECT card_topics.topic,
                   COUNT(*) AS total,
-                  SUM(cards.introduced_on IS NOT NULL) AS introduced,
-                  SUM(cards.learned != 0) AS learned,
-                  SUM(cards.difficult != 0) AS difficult,
-                  SUM(cards.introduced_on = date('now', 'localtime')) AS today
+                  SUM(progress.introduced_on IS NOT NULL) AS introduced,
+                  SUM(COALESCE(progress.learned, 0) != 0
+                      OR COALESCE(progress.streak, 0) > 0) AS learned,
+                  SUM(COALESCE(progress.difficult, 0) != 0) AS difficult,
+                  SUM(progress.introduced_on = date('now', 'localtime')) AS today,
+                  SUM(COALESCE(progress.learned, 0) = 0
+                      AND progress.introduced_on IS NOT NULL
+                      AND progress.due_at <= strftime('%s', 'now')) AS due
            FROM card_topics
            JOIN cards ON cards.id = card_topics.card_id
+           LEFT JOIN card_progress AS progress
+             ON progress.card_id = cards.id AND progress.profile_id = ?
            WHERE (? IS NULL OR cards.mode = ?)
              AND (? IS NULL OR card_topics.topic = ?)
            GROUP BY card_topics.topic ORDER BY card_topics.topic""",
-        (mode, mode, topic, topic),
+        (profile_id, mode, mode, topic, topic),
     ).fetchall()
     topic_by_name = {str(row["topic"]): row for row in topic_rows}
     topic_values = []
@@ -145,12 +188,22 @@ def thematic_statistics(
                 str(learned),
                 str(int(row["difficult"] or 0)),
                 str(int(row["today"] or 0)),
+                str(int(row["due"] or 0)),
                 f"{(100 * learned / total):.1f}%" if total else "0.0%",
             ]
         )
     print("\nTEMATY")
     print_table(
-        ["temat", "fiszki", "poznane", "umiem", "trudne", "dzisiaj", "postep"],
+        [
+            "temat",
+            "fiszki",
+            "poznane",
+            "umiem",
+            "trudne",
+            "dzisiaj",
+            "powtorki",
+            "postep",
+        ],
         topic_values,
     )
 
@@ -175,6 +228,8 @@ def build_parser() -> argparse.ArgumentParser:
     stats.add_argument("--mode", choices=MODES)
     stats.add_argument("--topic", choices=TOPICS)
 
+    commands.add_parser("profiles", help="lista profili i aktywny profil")
+
     snapshot = commands.add_parser("snapshot", help="utwórz spójną kopię dla DBeaver")
     snapshot.add_argument("output", nargs="?", type=Path)
     return parser
@@ -184,32 +239,61 @@ def main() -> None:
     args = build_parser().parse_args()
     database = args.database.expanduser().resolve()
     with open_read_only(database) as connection:
+        profile_id, _ = active_profile(connection)
         if args.command is None:
             summary(connection)
         elif args.command == "search":
             phrase = f"%{args.text}%"
             rows = connection.execute(
-                """SELECT id, mode, level, difficult, front, forms, back FROM cards
-                   WHERE front LIKE ? OR back LIKE ? OR forms LIKE ?
-                   ORDER BY level, front LIMIT ?""",
-                (phrase, phrase, phrase, max(1, min(args.limit, 500))),
+                """SELECT cards.id, cards.mode, cards.level,
+                          COALESCE(progress.difficult, 0) AS difficult,
+                          cards.front, cards.forms, cards.back FROM cards
+                   LEFT JOIN card_progress AS progress
+                     ON progress.card_id = cards.id AND progress.profile_id = ?
+                   WHERE cards.front LIKE ? OR cards.back LIKE ? OR cards.forms LIKE ?
+                   ORDER BY cards.level, cards.front LIMIT ?""",
+                (profile_id, phrase, phrase, phrase, max(1, min(args.limit, 500))),
             ).fetchall()
             print_rows(rows)
         elif args.command == "list":
             rows = connection.execute(
-                """SELECT id, mode, level, difficult, front, forms, back FROM cards
-                   WHERE (? IS NULL OR level = ?)
-                   ORDER BY front LIMIT ?""",
-                (args.level, args.level, max(1, min(args.limit, 500))),
+                """SELECT cards.id, cards.mode, cards.level,
+                          COALESCE(progress.difficult, 0) AS difficult,
+                          cards.front, cards.forms, cards.back FROM cards
+                   LEFT JOIN card_progress AS progress
+                     ON progress.card_id = cards.id AND progress.profile_id = ?
+                   WHERE (? IS NULL OR cards.level = ?)
+                   ORDER BY cards.front LIMIT ?""",
+                (profile_id, args.level, args.level, max(1, min(args.limit, 500))),
             ).fetchall()
             print_rows(rows)
         elif args.command == "card":
             rows = connection.execute(
-                "SELECT * FROM cards WHERE id = ?", (args.id,)
+                """SELECT cards.id, cards.mode, cards.front, cards.back, cards.forms,
+                          cards.level, cards.note, cards.source, cards.example,
+                          progress.streak, progress.seen_count,
+                          progress.correct_count, progress.due_at, progress.learned,
+                          progress.difficult, progress.introduced_on
+                   FROM cards
+                   LEFT JOIN card_progress AS progress
+                     ON progress.card_id = cards.id AND progress.profile_id = ?
+                   WHERE cards.id = ?""",
+                (profile_id, args.id),
             ).fetchall()
             print_rows(rows)
         elif args.command == "stats":
             thematic_statistics(connection, mode=args.mode, topic=args.topic)
+        elif args.command == "profiles":
+            rows = connection.execute(
+                """SELECT profiles.id, profiles.name,
+                          CASE WHEN profiles.id = ? THEN 'TAK' ELSE '' END AS aktywny,
+                          COUNT(card_progress.card_id) AS rozpoczete
+                   FROM profiles
+                   LEFT JOIN card_progress ON card_progress.profile_id = profiles.id
+                   GROUP BY profiles.id, profiles.name ORDER BY profiles.id""",
+                (profile_id,),
+            ).fetchall()
+            print_rows(rows)
         elif args.command == "snapshot":
             output = args.output or Path.home() / (
                 "piword-" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".db"

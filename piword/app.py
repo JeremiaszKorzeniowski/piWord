@@ -8,7 +8,9 @@ from pathlib import Path
 from .cards import (
     DAILY_GOAL,
     MODE_LABELS,
+    REVIEW_ALGORITHM_LOOP,
     REVERSE_MODE_LABELS,
+    SESSION_SIZE,
     TOPIC_LABELS,
     Card,
     CardStore,
@@ -19,6 +21,37 @@ from .display import WaveshareDisplay
 LEARNED_HOLD_SECONDS = 3.0
 RESET_HOLD_SECONDS = 10.0
 DOUBLE_CLICK_SECONDS = 0.45
+REPEAT_GAP_AGAIN = 3
+REPEAT_GAP_DIFFICULT = 1
+
+
+class StudySession:
+    def __init__(self, cards: list[Card]):
+        self.queue = list(cards)
+        self.total = len(cards)
+        self.completed = 0
+        self.current = self._take_next()
+
+    def _take_next(self) -> Card | None:
+        return self.queue.pop(0) if self.queue else None
+
+    @property
+    def remaining(self) -> int:
+        return len(self.queue) + (1 if self.current is not None else 0)
+
+    def repeat(self, gap: int) -> Card | None:
+        if self.current is None:
+            return None
+        self.queue.insert(min(max(0, gap), len(self.queue)), self.current)
+        self.current = self._take_next()
+        return self.current
+
+    def known(self) -> Card | None:
+        if self.current is None:
+            return None
+        self.completed += 1
+        self.current = self._take_next()
+        return self.current
 
 
 class ButtonEvents:
@@ -155,107 +188,165 @@ def run_hardware(database_path: Path) -> None:
     store.initialize()
     display = WaveshareDisplay()
     buttons = ButtonEvents()
+    algorithm = store.review_algorithm()
     mode = store.available_modes()[0]
     level: str | None = None
     topic: str | None = None
     reversed_direction = False
-    card, level = _next_for_mode(store, mode, level, topic)
+    session: StudySession | None = None
+    if algorithm == REVIEW_ALGORITHM_LOOP:
+        session = StudySession(
+            store.session_cards(mode=mode, level=level, topic=topic, limit=SESSION_SIZE)
+        )
+        card = session.current
+    else:
+        card, level = _next_for_mode(store, mode, level, topic)
     revealed = False
-    display.show_card(
-        card,
-        revealed,
-        "B1: pokaz  B2: poziom  B3: jezyk",
-        reversed_direction,
-        topic,
-    )
+
+    def show_empty(title: str = "BRAK POWTOREK") -> None:
+        display.show_status(
+            title,
+            [
+                f"Jezyk: {MODE_LABELS[mode]}",
+                f"Poziom: {level or 'ALL'}",
+                f"Temat: {TOPIC_LABELS.get(topic, 'WSZYSTKIE')}",
+                "Brak kart na teraz",
+                "B1: sprawdz ponownie",
+            ],
+        )
+
+    def show_current(message: str = "") -> None:
+        if card is None:
+            show_empty()
+        else:
+            display.show_card(card, revealed, message, reversed_direction, topic)
+
+    def restart_selection(message: str) -> None:
+        nonlocal card, level, session, revealed
+        revealed = False
+        if algorithm == REVIEW_ALGORITHM_LOOP:
+            session = StudySession(
+                store.session_cards(
+                    mode=mode, level=level, topic=topic, limit=SESSION_SIZE
+                )
+            )
+            card = session.current
+        else:
+            card, level = _next_for_mode(store, mode, level, topic)
+        show_current(message)
+
+    if card is None:
+        show_empty()
+    else:
+        initial_message = (
+            f"sesja: {session.remaining}/{session.total}"
+            if session is not None
+            else "B1: pokaz  B2: poziom  B3: jezyk"
+        )
+        show_current(initial_message)
 
     try:
         while True:
             event = buttons.events.get()
             if event == "button1_short":
+                if card is None:
+                    restart_selection("nowa sesja")
+                    continue
                 if not revealed:
                     store.mark_seen(card.id)
                     revealed = True
+                    message = (
+                        f"sesja: {session.remaining}/{session.total}"
+                        if session is not None
+                        else ""
+                    )
                 else:
                     store.mark_again(card.id)
-                    card, level = _next_for_mode(
-                        store, mode, level, topic, card.id
-                    )
+                    if session is not None:
+                        card = session.repeat(REPEAT_GAP_AGAIN)
+                        message = f"jeszcze raz; zostalo {session.remaining}"
+                    else:
+                        card, level = _next_for_mode(
+                            store, mode, level, topic, card.id
+                        )
+                        stats = store.statistics()
+                        message = f"dzis: {stats['today']}/{DAILY_GOAL}"
                     revealed = False
-                stats = store.statistics()
-                display.show_card(
-                    card,
-                    revealed,
-                    f"dzis: {stats['today']}/{DAILY_GOAL}",
-                    reversed_direction,
-                    topic,
-                )
+                show_current(message)
             elif event == "button1_double":
+                if card is None:
+                    show_empty()
+                    continue
                 difficult = store.toggle_difficult(card.id)
-                display.show_card(
-                    card,
-                    revealed,
-                    "oznaczono: trudne" if difficult else "usunieto oznaczenie: trudne",
-                    reversed_direction,
-                    topic,
-                )
-            elif event == "button1_long":
-                store.mark_learned(card.id)
-                try:
-                    card, level = _next_for_mode(
-                        store, mode, level, topic, card.id
+                if session is not None and revealed and difficult:
+                    store.mark_again(card.id)
+                    card = session.repeat(REPEAT_GAP_DIFFICULT)
+                    revealed = False
+                    message = f"trudne; zostalo {session.remaining}"
+                else:
+                    message = (
+                        "oznaczono: trudne"
+                        if difficult
+                        else "usunieto oznaczenie: trudne"
                     )
-                    message = "ukryto: umiem"
-                except RuntimeError:
-                    for candidate in store.available_modes():
-                        try:
-                            candidate_topic = (
-                                topic
-                                if topic in store.available_topics(candidate)
-                                else None
-                            )
-                            card, level = _next_for_mode(
-                                store, candidate, None, candidate_topic
-                            )
-                            mode = candidate
-                            topic = candidate_topic
-                            break
-                        except RuntimeError:
-                            continue
-                    message = "ukryto; brak kolejnych w grupie"
+                show_current(message)
+            elif event == "button1_long":
+                if card is None:
+                    show_empty()
+                    continue
+                if session is not None:
+                    store.mark_seen(card.id)
+                    store.mark_known(card.id)
+                    card = session.known()
+                    if card is None:
+                        revealed = False
+                        display.show_status(
+                            "SESJA UKONCZONA",
+                            [
+                                f"Opanowane: {session.completed}/{session.total}",
+                                "Powtorki zaplanowane",
+                                "B1: sprawdz nowa sesje",
+                            ],
+                        )
+                        continue
+                    message = f"umiem; zostalo {session.remaining}"
+                else:
+                    store.mark_learned(card.id)
+                    try:
+                        card, level = _next_for_mode(
+                            store, mode, level, topic, card.id
+                        )
+                        message = "ukryto: umiem"
+                    except RuntimeError:
+                        for candidate in store.available_modes():
+                            try:
+                                candidate_topic = (
+                                    topic
+                                    if topic in store.available_topics(candidate)
+                                    else None
+                                )
+                                card, level = _next_for_mode(
+                                    store, candidate, None, candidate_topic
+                                )
+                                mode = candidate
+                                topic = candidate_topic
+                                break
+                            except RuntimeError:
+                                continue
+                        message = "ukryto; brak kolejnych w grupie"
                 revealed = False
-                display.show_card(card, revealed, message, reversed_direction, topic)
+                show_current(message)
             elif event == "button3_short":
                 modes = store.available_modes()
                 start = modes.index(mode) if mode in modes else -1
-                for offset in range(1, len(modes) + 1):
-                    candidate = modes[(start + offset) % len(modes)]
-                    candidate_topic = (
-                        topic if topic in store.available_topics(candidate) else None
-                    )
-                    try:
-                        candidate_card, _ = _next_for_mode(
-                            store, candidate, None, candidate_topic
-                        )
-                    except RuntimeError:
-                        continue
-                    mode, level, topic, card = (
-                        candidate,
-                        None,
-                        candidate_topic,
-                        candidate_card,
-                    )
-                    break
+                candidate = modes[(start + 1) % len(modes)]
+                candidate_topic = (
+                    topic if topic in store.available_topics(candidate) else None
+                )
+                mode, level, topic = candidate, None, candidate_topic
                 if mode not in REVERSE_MODE_LABELS:
                     reversed_direction = False
-                revealed = False
-                display.show_card(
-                    card,
-                    revealed,
-                    f"jezyk: {MODE_LABELS[mode]}",
-                    reversed_direction,
-                    topic,
-                )
+                restart_selection(f"jezyk: {MODE_LABELS[mode]}")
             elif event == "button3_long":
                 if mode in REVERSE_MODE_LABELS:
                     reversed_direction = not reversed_direction
@@ -268,7 +359,7 @@ def run_hardware(database_path: Path) -> None:
                     message = f"kierunek: {direction}"
                 else:
                     message = "ten tryb ma jeden kierunek"
-                display.show_card(card, revealed, message, reversed_direction, topic)
+                show_current(message)
             elif event == "button2_short":
                 choices: list[str | None] = [
                     None,
@@ -276,27 +367,13 @@ def run_hardware(database_path: Path) -> None:
                 ]
                 current = choices.index(level) if level in choices else 0
                 level = choices[(current + 1) % len(choices)]
-                card, level = _next_for_mode(store, mode, level, topic)
-                revealed = False
-                display.show_card(
-                    card,
-                    revealed,
-                    f"poziom: {level or 'ALL'}",
-                    reversed_direction,
-                    topic,
-                )
+                restart_selection(f"poziom: {level or 'ALL'}")
             elif event == "button23_short":
                 choices = [None, *store.available_topics(mode)]
                 current = choices.index(topic) if topic in choices else 0
                 topic = choices[(current + 1) % len(choices)]
-                card, level = _next_for_mode(store, mode, level, topic)
-                revealed = False
-                display.show_card(
-                    card,
-                    revealed,
-                    f"zbior: {TOPIC_LABELS.get(topic, 'WSZYSTKIE')}",
-                    reversed_direction,
-                    topic,
+                restart_selection(
+                    f"zbior: {TOPIC_LABELS.get(topic, 'WSZYSTKIE')}"
                 )
             elif event == "button2_long":
                 stats = store.statistics(mode=mode, level=level, topic=topic)
@@ -313,15 +390,7 @@ def run_hardware(database_path: Path) -> None:
                 )
             elif event == "reset_progress":
                 reset_count = store.reset_progress()
-                card, level = _next_for_mode(store, mode, level, topic)
-                revealed = False
-                display.show_card(
-                    card,
-                    revealed,
-                    f"reset: przywrocono {reset_count}",
-                    reversed_direction,
-                    topic,
-                )
+                restart_selection(f"reset: przywrocono {reset_count}")
     except KeyboardInterrupt:
         pass
     finally:

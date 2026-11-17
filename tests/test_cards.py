@@ -7,8 +7,15 @@ import time
 from tempfile import TemporaryDirectory
 import unittest
 
-from piword.app import ButtonEvents
-from piword.cards import TOPICS, Card, CardStore
+from piword.app import ButtonEvents, StudySession
+from piword.cards import (
+    REVIEW_ALGORITHM_LEGACY,
+    REVIEW_ALGORITHM_LOOP,
+    SESSION_SIZE,
+    TOPICS,
+    Card,
+    CardStore,
+)
 from piword.display import card_header
 from tools.db_view import thematic_statistics
 
@@ -68,10 +75,10 @@ class CardStoreTests(unittest.TestCase):
             self.assertNotEqual(card.id, following.id)
             self.assertEqual(store.reset_progress(), 1)
             with store.connect() as connection:
-                learned = connection.execute(
-                    "SELECT learned FROM cards WHERE id = ?", (card.id,)
-                ).fetchone()[0]
-            self.assertEqual(learned, 0)
+                progress = connection.execute(
+                    "SELECT learned FROM card_progress WHERE card_id = ?", (card.id,)
+                ).fetchone()
+            self.assertIsNone(progress)
 
     def test_polish_modes_examples_and_daily_statistics(self):
         with TemporaryDirectory() as directory:
@@ -148,6 +155,134 @@ class CardStoreTests(unittest.TestCase):
             self.assertIn("EN -> PL", report)
             self.assertIn("KOLORY", report)
             self.assertIn("postep", report)
+
+    def test_review_algorithm_is_stored_but_hidden_from_the_ui(self):
+        with TemporaryDirectory() as directory:
+            store = CardStore(Path(directory) / "cards.db")
+            store.initialize()
+            self.assertEqual(store.review_algorithm(), REVIEW_ALGORITHM_LOOP)
+            store.set_review_algorithm(REVIEW_ALGORITHM_LEGACY)
+            store.initialize()
+            self.assertEqual(store.review_algorithm(), REVIEW_ALGORITHM_LEGACY)
+            with self.assertRaises(ValueError):
+                store.set_review_algorithm("unknown")
+
+    def test_session_prioritizes_due_cards_and_limits_new_words(self):
+        with TemporaryDirectory() as directory:
+            store = CardStore(Path(directory) / "cards.db")
+            store.initialize()
+            cards = store.session_cards(limit=SESSION_SIZE)
+            self.assertEqual(len(cards), SESSION_SIZE)
+
+            for card in cards:
+                store.mark_seen(card.id)
+                store.mark_known(card.id)
+
+            self.assertEqual(store.session_cards(limit=SESSION_SIZE), [])
+
+    def test_known_word_gets_spaced_review_instead_of_permanent_hiding(self):
+        with TemporaryDirectory() as directory:
+            store = CardStore(Path(directory) / "cards.db")
+            store.initialize()
+            card = store.session_cards(limit=1)[0]
+            store.mark_seen(card.id)
+            before = int(time.time())
+            store.mark_known(card.id)
+
+            with store.connect() as connection:
+                row = connection.execute(
+                    """SELECT streak, due_at, learned FROM card_progress
+                       WHERE profile_id = ? AND card_id = ?""",
+                    (store.active_profile().id, card.id),
+                ).fetchone()
+            self.assertEqual(row[0], 1)
+            self.assertGreaterEqual(row[1], before + 86400)
+            self.assertLessEqual(row[1], before + 86405)
+            self.assertEqual(row[2], 0)
+
+    def test_profiles_keep_progress_statistics_and_algorithm_separate(self):
+        with TemporaryDirectory() as directory:
+            store = CardStore(Path(directory) / "cards.db")
+            store.initialize()
+            default = store.active_profile()
+            card = store.next_card(mode="en_pl", topic="COLORS")
+            store.mark_seen(card.id)
+            store.mark_known(card.id)
+            store.toggle_difficult(card.id)
+            store.set_review_algorithm(REVIEW_ALGORITHM_LEGACY)
+
+            second = store.create_profile("Ania")
+            store.set_active_profile(second.id)
+            self.assertEqual(store.active_profile(), second)
+            self.assertEqual(store.statistics()["learned"], 0)
+            self.assertEqual(store.statistics()["difficult"], 0)
+            self.assertEqual(store.review_algorithm(), REVIEW_ALGORITHM_LOOP)
+
+            store.mark_learned(card.id)
+            self.assertEqual(store.statistics()["learned"], 1)
+            store.set_active_profile(default.id)
+            self.assertEqual(store.review_algorithm(), REVIEW_ALGORITHM_LEGACY)
+            self.assertEqual(store.statistics()["difficult"], 1)
+
+    def test_reset_clears_only_active_profile(self):
+        with TemporaryDirectory() as directory:
+            store = CardStore(Path(directory) / "cards.db")
+            store.initialize()
+            default = store.active_profile()
+            card = store.next_card()
+            store.mark_learned(card.id)
+
+            second = store.create_profile("Bartek")
+            store.set_active_profile(second.id)
+            store.mark_learned(card.id)
+            self.assertEqual(store.reset_progress(), 1)
+            self.assertEqual(store.statistics()["learned"], 0)
+
+            store.set_active_profile(default.id)
+            self.assertEqual(store.statistics()["learned"], 1)
+
+    def test_existing_single_user_progress_is_migrated_to_default_profile(self):
+        with TemporaryDirectory() as directory:
+            store = CardStore(Path(directory) / "cards.db")
+            store.initialize()
+            card = store.next_card()
+            with store.connect() as connection:
+                connection.execute(
+                    """UPDATE cards SET streak = 2, seen_count = 3,
+                       correct_count = 2, learned = 1, difficult = 1,
+                       introduced_on = '2026-11-17' WHERE id = ?""",
+                    (card.id,),
+                )
+                connection.execute("DELETE FROM card_progress")
+                connection.execute(
+                    "DELETE FROM settings WHERE key = 'profile_progress_migrated'"
+                )
+
+            store.initialize()
+            with store.connect() as connection:
+                row = connection.execute(
+                    """SELECT streak, seen_count, learned, difficult, introduced_on
+                       FROM card_progress WHERE profile_id = 1 AND card_id = ?""",
+                    (card.id,),
+                ).fetchone()
+            self.assertEqual(tuple(row), (2, 3, 1, 1, "2026-11-17"))
+
+
+class StudySessionTests(unittest.TestCase):
+    def test_again_reinserts_word_after_three_other_cards(self):
+        cards = [Card(id=index, mode="en_pl", front=str(index), back=str(index)) for index in range(1, 6)]
+        session = StudySession(cards)
+
+        self.assertEqual(session.current.id, 1)
+        session.repeat(3)
+        self.assertEqual(session.current.id, 2)
+        session.known()
+        self.assertEqual(session.current.id, 3)
+        session.known()
+        self.assertEqual(session.current.id, 4)
+        session.known()
+        self.assertEqual(session.current.id, 1)
+        self.assertEqual(session.remaining, 2)
 
 
 class ButtonEventTests(unittest.TestCase):
