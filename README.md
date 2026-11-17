@@ -7,17 +7,24 @@ wyświetlacza Waveshare 2.13" V2 (250x122) i trzech przycisków.
 
 Obsługiwane tryby to `EN -> PL`, `RU -> PL`, `ES -> PL`, `SJP` i `OBCE`:
 
-- B1, GPIO5: pokaż tłumaczenie; ponowne naciśnięcie przechodzi dalej,
-- przytrzymanie B1 przez 3 sekundy: oznacz „umiem” i trwale ukryj fiszkę,
-- podwójne naciśnięcie B1: włącz lub wyłącz oznaczenie „trudne”,
-- B2, GPIO6: przełącz język,
-- przytrzymanie B2 przez 3 sekundy: odwróć kierunek PL ↔ język obcy,
-- B3, GPIO13: przełącz poziom `ALL`, A1–C2 lub `OTHER`,
-- przytrzymanie B3 przez 3 sekundy: pokaż statystyki i dzienny cel,
-- jednoczesne przytrzymanie B2+B3 przez 10 sekund: wyzeruj cały postęp;
-  słowniki nie są wtedy usuwane,
+| Przycisk | Krótko | Długo / specjalnie |
+| --- | --- | --- |
+| B1, GPIO5 | pokaż tłumaczenie; ponownie: następna fiszka | 3 s: oznacz „umiem” i ukryj fiszkę |
+| B1 ×2 | włącz lub wyłącz oznaczenie „trudne” | — |
+| B2, GPIO6 | przełącz poziom: `ALL`, A1–C2, `TRUDNE`, `OBCE` lub `OTHER` | 3 s: pokaż statystyki i dzienny cel |
+| B3, GPIO13 | przełącz język / tryb | 3 s: odwróć kierunek PL ↔ język obcy |
+| B2 + B3 | przełącz zbiór tematyczny | 10 s: wyzeruj cały postęp; słowniki pozostają |
+
+- nagłówek zawsze pokazuje kierunek języka i zbiór bieżącej fiszki,
 - postęp jest zapisywany lokalnie w SQLite,
 - aplikacja działa bez internetu.
+
+Poziom i zbiór tematyczny są niezależne. Można więc wybrać na przykład
+`KOLORY`, a następnie ograniczyć je do poziomu A1. Dostępne zbiory dla
+angielskiego, rosyjskiego i hiszpańskiego to: dni tygodnia, miesiące, liczby,
+kolory, przymiotniki, czasowniki nieregularne, rodzina, jedzenie, dom, ciało,
+ubrania, zwierzęta, pogoda, podróże i podstawowe czasowniki. Wybranie
+`WSZYSTKIE` wyłącza filtr tematyczny.
 
 Dzienny cel wynosi 20 nowych słów. Słowo jest liczone przy pierwszym odsłonięciu
 tłumaczenia danego dnia. Statystyki pokazują także liczbę słów ukrytych jako
@@ -162,7 +169,8 @@ czas importu zatrzymuje usługę `piword.service`, a po zakończeniu uruchamia j
 ponownie. Angielski ma podział A1–C2, rosyjski i hiszpański A1–B2; pozostałe
 hasła trafiają do `OTHER`.
 
-Język i poziom bieżącej fiszki są pokazane w nagłówku ekranu.
+Język, poziom bieżącej fiszki i wybrany zbiór tematyczny są zawsze pokazane
+w nagłówku ekranu. Techniczna grupa `OTHER` jest tam wyświetlana jako `INNE`.
 
 Trzeci przycisk podłącz między GPIO13 (fizyczny pin 33) i GND (pin 34).
 

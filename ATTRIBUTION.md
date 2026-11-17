@@ -4,6 +4,13 @@ piWord nie przechowuje pełnego słownika w repozytorium. Skrypt instalacyjny
 pobiera dane bezpośrednio z poniższych projektów i importuje je do lokalnej
 bazy SQLite użytkownika.
 
+## Zbiory tematyczne piWord
+
+Plik `data/thematic_cards.csv`, lista czasowników nieregularnych oraz polskie
+zbiory `SJP` i `OBCE` są krótkimi, ręcznie redagowanymi materiałami projektu
+piWord. Nie są kopiami zewnętrznego słownika. Poziomy CEFR przy tych fiszkach
+mają charakter orientacyjny.
+
 ## FreeDict English–Polish
 
 - Projekt: FreeDict, słownik `eng-pol`, wydanie 0.2.1

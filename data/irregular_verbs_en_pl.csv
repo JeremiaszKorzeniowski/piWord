@@ -1,35 +1,35 @@
-front,forms,back
-be,was/were - been,być
-begin,began - begun,zaczynać
-break,broke - broken,łamać
-bring,brought - brought,przynosić
-buy,bought - bought,kupować
-come,came - come,przychodzić
-do,did - done,robić
-drink,drank - drunk,pić
-drive,drove - driven,prowadzić
-eat,ate - eaten,jeść
-fall,fell - fallen,upadać
-feel,felt - felt,czuć
-find,found - found,znajdować
-get,got - got/gotten,dostawać
-give,gave - given,dawać
-go,went - gone,iść
-have,had - had,mieć
-hear,heard - heard,słyszeć
-keep,kept - kept,trzymać
-know,knew - known,wiedzieć; znać
-leave,left - left,opuszczać
-make,made - made,robić; tworzyć
-meet,met - met,spotykać
-read,read - read,czytać
-run,ran - run,biec
-say,said - said,mówić
-see,saw - seen,widzieć
-speak,spoke - spoken,mówić
-take,took - taken,brać
-think,thought - thought,myśleć
-understand,understood - understood,rozumieć
-wear,wore - worn,nosić
-win,won - won,wygrywać
-write,wrote - written,pisać
+front,forms,back,level
+be,was/were - been,być,A1
+begin,began - begun,zaczynać,A2
+break,broke - broken,łamać,A2
+bring,brought - brought,przynosić,A2
+buy,bought - bought,kupować,A1
+come,came - come,przychodzić,A1
+do,did - done,robić,A1
+drink,drank - drunk,pić,A1
+drive,drove - driven,prowadzić,A1
+eat,ate - eaten,jeść,A1
+fall,fell - fallen,upadać,A2
+feel,felt - felt,czuć,A2
+find,found - found,znajdować,A1
+get,got - got/gotten,dostawać,A1
+give,gave - given,dawać,A1
+go,went - gone,iść,A1
+have,had - had,mieć,A1
+hear,heard - heard,słyszeć,A1
+keep,kept - kept,trzymać,A2
+know,knew - known,wiedzieć; znać,A1
+leave,left - left,opuszczać,A1
+make,made - made,robić; tworzyć,A1
+meet,met - met,spotykać,A1
+read,read - read,czytać,A1
+run,ran - run,biec,A1
+say,said - said,mówić,A1
+see,saw - seen,widzieć,A1
+speak,spoke - spoken,mówić,A1
+take,took - taken,brać,A1
+think,thought - thought,myśleć,A1
+understand,understood - understood,rozumieć,A1
+wear,wore - worn,nosić,A2
+win,won - won,wygrywać,A2
+write,wrote - written,pisać,A1

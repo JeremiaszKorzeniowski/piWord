@@ -1,11 +1,26 @@
 from pathlib import Path
+import queue
+import threading
 from tempfile import TemporaryDirectory
 import unittest
 
-from piword.cards import CardStore
+from piword.app import ButtonEvents
+from piword.cards import TOPICS, Card, CardStore
+from piword.display import card_header
 
 
 class CardStoreTests(unittest.TestCase):
+    def test_header_always_includes_card_collection(self):
+        other = Card(id=1, mode="en_pl", front="go", back="iść", level="OTHER")
+        beginner = Card(id=2, mode="en_pl", front="cat", back="kot", level="A1")
+
+        self.assertEqual(card_header(other), "EN -> PL  INNE  WSZYSTKIE")
+        self.assertEqual(card_header(beginner), "EN -> PL  A1  WSZYSTKIE")
+        self.assertEqual(
+            card_header(beginner, reversed_direction=True, topic="COLORS"),
+            "PL -> EN  A1  KOLORY",
+        )
+
     def test_initialize_and_progress(self):
         with TemporaryDirectory() as directory:
             store = CardStore(Path(directory) / "cards.db")
@@ -33,11 +48,11 @@ class CardStoreTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             store = CardStore(Path(directory) / "cards.db")
             store.initialize()
-            changed = store.assign_levels({"go": "A1"})
+            changed = store.assign_levels({"go": "C2"})
             self.assertGreaterEqual(changed, 1)
-            card = store.next_card(level="A1")
+            card = store.next_card(level="C2")
             self.assertEqual(card.front, "go")
-            self.assertEqual(card.level, "A1")
+            self.assertEqual(card.level, "C2")
 
     def test_learned_cards_are_hidden_and_reset_restores_them(self):
         with TemporaryDirectory() as directory:
@@ -67,6 +82,81 @@ class CardStoreTests(unittest.TestCase):
             stats = store.statistics()
             self.assertEqual(stats["today"], 1)
             self.assertEqual(stats["difficult"], 1)
+
+    def test_thematic_sets_exist_for_each_foreign_language(self):
+        with TemporaryDirectory() as directory:
+            store = CardStore(Path(directory) / "cards.db")
+            store.initialize()
+
+            for mode in ("en_pl", "ru_pl", "es_pl"):
+                self.assertEqual(store.available_topics(mode), list(TOPICS))
+                days = store.next_card(mode=mode, topic="DAYS")
+                self.assertEqual(days.level, "A1")
+                with store.connect() as connection:
+                    counts = {
+                        row[0]: row[1]
+                        for row in connection.execute(
+                            """SELECT card_topics.topic, COUNT(*)
+                               FROM card_topics
+                               JOIN cards ON cards.id = card_topics.card_id
+                               WHERE cards.mode = ?
+                               GROUP BY card_topics.topic""",
+                            (mode,),
+                        )
+                    }
+                for topic in TOPICS:
+                    self.assertGreaterEqual(counts[topic], 7)
+
+    def test_topic_and_level_filters_work_together(self):
+        with TemporaryDirectory() as directory:
+            store = CardStore(Path(directory) / "cards.db")
+            store.initialize()
+
+            card = store.next_card(mode="en_pl", level="A1", topic="COLORS")
+            self.assertEqual(card.level, "A1")
+            with store.connect() as connection:
+                topics = {
+                    row[0]
+                    for row in connection.execute(
+                        "SELECT topic FROM card_topics WHERE card_id = ?", (card.id,)
+                    )
+                }
+            self.assertIn("COLORS", topics)
+            self.assertEqual(store.available_levels("en_pl", "DAYS"), ["A1"])
+
+
+class ButtonEventTests(unittest.TestCase):
+    def make_events(self):
+        events = ButtonEvents.__new__(ButtonEvents)
+        events.events = queue.Queue()
+        events.pressed_at = {}
+        events.suppressed_releases = set()
+        events.combo_timer = None
+        events.button1_click_timer = None
+        events.lock = threading.Lock()
+        return events
+
+    def test_short_button2_button3_combo_emits_topic_change_only(self):
+        events = self.make_events()
+        events._pressed("button2")
+        events._pressed("button3")
+        events._released("button2")
+        events._released("button3")
+
+        self.assertEqual(events.events.get_nowait(), "button23_short")
+        self.assertTrue(events.events.empty())
+
+    def test_ten_second_combo_emits_reset_only(self):
+        events = self.make_events()
+        events._pressed("button2")
+        events._pressed("button3")
+        events.combo_timer.cancel()
+        events._reset_combo()
+        events._released("button2")
+        events._released("button3")
+
+        self.assertEqual(events.events.get_nowait(), "reset_progress")
+        self.assertTrue(events.events.empty())
 
 
 if __name__ == "__main__":

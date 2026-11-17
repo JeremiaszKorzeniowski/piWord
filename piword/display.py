@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from .cards import Card, MODE_LABELS, REVERSE_MODE_LABELS
+from .cards import Card, MODE_LABELS, REVERSE_MODE_LABELS, TOPIC_LABELS
 
 
 WIDTH = 250
@@ -16,6 +16,7 @@ HEIGHT = 122
 
 def _font_candidates(bold: bool = False) -> tuple[Path, ...]:
     name = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
+    windows_name = "arialbd.ttf" if bold else "arial.ttf"
     waveshare_pic = (
         Path.home()
         / "e-Paper"
@@ -29,6 +30,7 @@ def _font_candidates(bold: bool = False) -> tuple[Path, ...]:
         Path("/usr/share/fonts/dejavu") / name,
         waveshare_pic,
         Path("C:/Windows/Fonts") / name,
+        Path("C:/Windows/Fonts") / windows_name,
     )
 
 
@@ -54,18 +56,31 @@ def _fit_font(draw: ImageDraw.ImageDraw, text: str, max_width: int, max_size: in
     return _font(min_size, bold=True)
 
 
-def render_card(
-    card: Card, revealed: bool, message: str = "", reversed_direction: bool = False
-) -> Image.Image:
-    image = Image.new("1", (WIDTH, HEIGHT), 255)
-    draw = ImageDraw.Draw(image)
+def card_header(
+    card: Card, reversed_direction: bool = False, topic: str | None = None
+) -> str:
     mode_label = (
         REVERSE_MODE_LABELS.get(card.mode, MODE_LABELS.get(card.mode, card.mode.upper()))
         if reversed_direction
         else MODE_LABELS.get(card.mode, card.mode.upper())
     )
-    header = mode_label if card.level == "OTHER" else f"{mode_label}  {card.level}"
-    draw.text((6, 3), header, font=_font(11, bold=True), fill=0)
+    level_label = "INNE" if card.level == "OTHER" else card.level
+    topic_label = TOPIC_LABELS.get(topic, "WSZYSTKIE")
+    return f"{mode_label}  {level_label}  {topic_label}"
+
+
+def render_card(
+    card: Card,
+    revealed: bool,
+    message: str = "",
+    reversed_direction: bool = False,
+    topic: str | None = None,
+) -> Image.Image:
+    image = Image.new("1", (WIDTH, HEIGHT), 255)
+    draw = ImageDraw.Draw(image)
+    header = card_header(card, reversed_direction, topic)
+    header_font = _fit_font(draw, header, WIDTH - 12, 11, 8)
+    draw.text((6, 3), header, font=header_font, fill=0)
     draw.line((5, 18, WIDTH - 6, 18), fill=0, width=1)
 
     front = card.back if reversed_direction else card.front
@@ -120,10 +135,15 @@ class PreviewDisplay:
         self.output = Path(output)
 
     def show_card(
-        self, card: Card, revealed: bool, message: str = "", reversed_direction: bool = False
+        self,
+        card: Card,
+        revealed: bool,
+        message: str = "",
+        reversed_direction: bool = False,
+        topic: str | None = None,
     ) -> None:
         self.output.parent.mkdir(parents=True, exist_ok=True)
-        render_card(card, revealed, message, reversed_direction).save(self.output)
+        render_card(card, revealed, message, reversed_direction, topic).save(self.output)
 
     def show_status(self, title: str, lines: list[str]) -> None:
         self.output.parent.mkdir(parents=True, exist_ok=True)
@@ -159,9 +179,14 @@ class WaveshareDisplay:
         self.update_count += 1
 
     def show_card(
-        self, card: Card, revealed: bool, message: str = "", reversed_direction: bool = False
+        self,
+        card: Card,
+        revealed: bool,
+        message: str = "",
+        reversed_direction: bool = False,
+        topic: str | None = None,
     ) -> None:
-        self._show_image(render_card(card, revealed, message, reversed_direction))
+        self._show_image(render_card(card, revealed, message, reversed_direction, topic))
 
     def show_status(self, title: str, lines: list[str]) -> None:
         self._show_image(render_status(title, lines))

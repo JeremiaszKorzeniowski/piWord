@@ -28,6 +28,40 @@ REVERSE_MODE_LABELS = {
     MODE_ES_PL: "PL -> ES",
 }
 LEVELS = ("A1", "A2", "B1", "B2", "C1", "C2", "TRUDNE", "OBCE", "OTHER")
+TOPICS = (
+    "DAYS",
+    "MONTHS",
+    "NUMBERS",
+    "COLORS",
+    "ADJECTIVES",
+    "IRREGULAR",
+    "FAMILY",
+    "FOOD",
+    "HOME",
+    "BODY",
+    "CLOTHES",
+    "ANIMALS",
+    "WEATHER",
+    "TRAVEL",
+    "VERBS",
+)
+TOPIC_LABELS = {
+    "DAYS": "DNI",
+    "MONTHS": "MIESIĄCE",
+    "NUMBERS": "LICZBY",
+    "COLORS": "KOLORY",
+    "ADJECTIVES": "PRZYMIOTNIKI",
+    "IRREGULAR": "NIEREGULARNE",
+    "FAMILY": "RODZINA",
+    "FOOD": "JEDZENIE",
+    "HOME": "DOM",
+    "BODY": "CIAŁO",
+    "CLOTHES": "UBRANIA",
+    "ANIMALS": "ZWIERZĘTA",
+    "WEATHER": "POGODA",
+    "TRAVEL": "PODRÓŻE",
+    "VERBS": "CZASOWNIKI",
+}
 DAILY_GOAL = 20
 
 
@@ -62,6 +96,10 @@ def default_polish_paths() -> tuple[tuple[Path, str, str], ...]:
         (data / "polish_dictionary.csv", MODE_PL_DICT, "piWord słownik polski"),
         (data / "polish_foreign.csv", MODE_PL_FOREIGN, "piWord wyrazy obce"),
     )
+
+
+def default_thematic_path() -> Path:
+    return Path(__file__).resolve().parent.parent / "data" / "thematic_cards.csv"
 
 
 class CardStore:
@@ -103,6 +141,14 @@ class CardStore:
                     UNIQUE(mode, front, back)
                 );
                 CREATE INDEX IF NOT EXISTS cards_due_idx ON cards(mode, due_at);
+                CREATE TABLE IF NOT EXISTS card_topics (
+                    card_id INTEGER NOT NULL,
+                    topic TEXT NOT NULL,
+                    PRIMARY KEY(card_id, topic),
+                    FOREIGN KEY(card_id) REFERENCES cards(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS card_topics_topic_idx
+                    ON card_topics(topic, card_id);
                 """
             )
             columns = {
@@ -137,6 +183,7 @@ class CardStore:
         if count == 0:
             self.import_csv(seed_path or default_seed_path(), source="piWord seed v1")
         self.import_irregular_csv(default_irregular_path())
+        self.import_thematic_csv(default_thematic_path())
         for path, mode, source in default_polish_paths():
             self.import_csv(path, source=source, mode=mode)
 
@@ -175,7 +222,7 @@ class CardStore:
                             front,
                             back,
                             forms,
-                            "OTHER",
+                            row.get("level", "OTHER").strip().upper() or "OTHER",
                             "irregular verb",
                             "piWord irregular verbs",
                             "",
@@ -189,10 +236,76 @@ class CardStore:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(mode, front, back) DO UPDATE SET
                     forms = excluded.forms,
+                    level = CASE
+                        WHEN cards.level = 'OTHER' THEN excluded.level
+                        ELSE cards.level
+                    END,
                     note = excluded.note
                 """,
                 rows,
             )
+            connection.execute(
+                """INSERT OR IGNORE INTO card_topics(card_id, topic)
+                   SELECT id, 'IRREGULAR' FROM cards
+                   WHERE mode = ? AND note = 'irregular verb'""",
+                (MODE_EN_PL,),
+            )
+            return connection.total_changes - before
+
+    def import_thematic_csv(self, path: Path) -> int:
+        rows: list[tuple[str, str, str, str, str, str, str, str, str]] = []
+        with Path(path).open("r", encoding="utf-8-sig", newline="") as handle:
+            for row in csv.DictReader(handle):
+                mode = row.get("mode", "").strip()
+                front = row.get("front", "").strip()
+                back = row.get("back", "").strip()
+                topic = row.get("topic", "").strip().upper()
+                if mode in MODES and front and back and topic in TOPICS:
+                    rows.append(
+                        (
+                            mode,
+                            front,
+                            back,
+                            row.get("forms", "").strip(),
+                            row.get("level", "OTHER").strip().upper() or "OTHER",
+                            row.get("note", "").strip(),
+                            "piWord thematic sets",
+                            row.get("example", "").strip(),
+                            topic,
+                        )
+                    )
+        with self.connect() as connection:
+            before = connection.total_changes
+            for mode, front, back, forms, level, note, source, example, topic in rows:
+                connection.execute(
+                    """INSERT INTO cards(
+                           mode, front, back, forms, level, note, source, example
+                       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(mode, front, back) DO UPDATE SET
+                           forms = CASE
+                               WHEN excluded.forms != '' THEN excluded.forms
+                               ELSE cards.forms
+                           END,
+                           level = CASE
+                               WHEN cards.level = 'OTHER' THEN excluded.level
+                               ELSE cards.level
+                           END,
+                           note = CASE
+                               WHEN excluded.note != '' THEN excluded.note
+                               ELSE cards.note
+                           END,
+                           example = CASE
+                               WHEN excluded.example != '' THEN excluded.example
+                               ELSE cards.example
+                           END""",
+                    (mode, front, back, forms, level, note, source, example),
+                )
+                connection.execute(
+                    """INSERT OR IGNORE INTO card_topics(card_id, topic)
+                       SELECT id, ? FROM cards
+                       WHERE mode = ? AND front = ? AND back = ?""",
+                    (topic, mode, front, back),
+                )
             return connection.total_changes - before
 
     def add_cards(
@@ -238,13 +351,19 @@ class CardStore:
         mode: str = MODE_EN_PL,
         exclude_id: int | None = None,
         level: str | None = None,
+        topic: str | None = None,
     ) -> Card:
         now = int(time.time())
         query = """
             SELECT id, mode, front, back, forms, level, note, source, example
             FROM cards
             WHERE mode = ? AND learned = 0
-              AND (? IS NULL OR level = ?) AND (? IS NULL OR id != ?)
+              AND (? IS NULL OR level = ?)
+              AND (? IS NULL OR EXISTS (
+                  SELECT 1 FROM card_topics
+                  WHERE card_id = cards.id AND topic = ?
+              ))
+              AND (? IS NULL OR id != ?)
             ORDER BY CASE WHEN due_at <= ? THEN 0 ELSE 1 END,
                      difficult DESC,
                      due_at,
@@ -253,15 +372,30 @@ class CardStore:
         """
         with self.connect() as connection:
             row = connection.execute(
-                query, (mode, level, level, exclude_id, exclude_id, now)
+                query,
+                (
+                    mode,
+                    level,
+                    level,
+                    topic,
+                    topic,
+                    exclude_id,
+                    exclude_id,
+                    now,
+                ),
             ).fetchone()
             if row is None and exclude_id is not None:
                 row = connection.execute(
                     """SELECT id, mode, front, back, forms, level, note, source, example
                        FROM cards
-                       WHERE mode = ? AND learned = 0 AND (? IS NULL OR level = ?)
+                       WHERE mode = ? AND learned = 0
+                         AND (? IS NULL OR level = ?)
+                         AND (? IS NULL OR EXISTS (
+                             SELECT 1 FROM card_topics
+                             WHERE card_id = cards.id AND topic = ?
+                         ))
                        LIMIT 1""",
-                    (mode, level, level),
+                    (mode, level, level, topic, topic),
                 ).fetchone()
         if row is None:
             raise RuntimeError(f"Brak fiszek dla trybu {mode}")
@@ -339,15 +473,31 @@ class CardStore:
         present = {str(row[0]) for row in rows}
         return [mode for mode in MODES if mode in present]
 
-    def available_levels(self, mode: str) -> list[str]:
+    def available_levels(self, mode: str, topic: str | None = None) -> list[str]:
         with self.connect() as connection:
             rows = connection.execute(
                 """SELECT DISTINCT level FROM cards
-                   WHERE mode = ? AND learned = 0""",
-                (mode,),
+                   WHERE mode = ? AND learned = 0
+                     AND (? IS NULL OR EXISTS (
+                         SELECT 1 FROM card_topics
+                         WHERE card_id = cards.id AND topic = ?
+                     ))""",
+                (mode, topic, topic),
             ).fetchall()
         present = {str(row[0]) for row in rows}
         return [level for level in LEVELS if level in present]
+
+    def available_topics(self, mode: str) -> list[str]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT DISTINCT card_topics.topic
+                   FROM card_topics
+                   JOIN cards ON cards.id = card_topics.card_id
+                   WHERE cards.mode = ? AND cards.learned = 0""",
+                (mode,),
+            ).fetchall()
+        present = {str(row[0]) for row in rows}
+        return [topic for topic in TOPICS if topic in present]
 
     def reset_progress(self) -> int:
         with self.connect() as connection:
