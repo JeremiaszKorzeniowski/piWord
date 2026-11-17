@@ -24,7 +24,14 @@ Poziom i zbiór tematyczny są niezależne. Można więc wybrać na przykład
 angielskiego, rosyjskiego i hiszpańskiego to: dni tygodnia, miesiące, liczby,
 kolory, przymiotniki, czasowniki nieregularne, rodzina, jedzenie, dom, ciało,
 ubrania, zwierzęta, pogoda, podróże i podstawowe czasowniki. Wybranie
-`WSZYSTKIE` wyłącza filtr tematyczny.
+`WSZYSTKIE` wyłącza filtr tematyczny. Dodatkowe zestawy obejmują codzienne
+zwroty, czas, szkołę, pracę, zakupy i zdrowie.
+
+Na podstawie przekroju tematów z podręczników słownictwa dostępne są również
+zbiory: dzieciństwo, polityka, religia, geografia, wojna, migracja, ekologia,
+relacje, media, technologia, biznes, rolnictwo, przemysł, sport, nauka, kultura
+oraz opinie i przydatne wyrażenia. Listy są samodzielnie redagowanymi zestawami
+piWord, a nie kopią treści podręcznika.
 
 Dzienny cel wynosi 20 nowych słów. Słowo jest liczone przy pierwszym odsłonięciu
 tłumaczenia danego dnia. Statystyki pokazują także liczbę słów ukrytych jako

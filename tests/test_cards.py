@@ -1,6 +1,7 @@
 from pathlib import Path
 import queue
 import threading
+import time
 from tempfile import TemporaryDirectory
 import unittest
 
@@ -145,6 +146,27 @@ class ButtonEventTests(unittest.TestCase):
 
         self.assertEqual(events.events.get_nowait(), "button23_short")
         self.assertTrue(events.events.empty())
+
+    def test_each_physical_button_emits_its_own_short_event(self):
+        for name in ("button1", "button2", "button3"):
+            with self.subTest(name=name):
+                events = self.make_events()
+                events._pressed(name)
+                events._released(name)
+                if name == "button1":
+                    events._cancel_button1_click()
+                    events._emit_button1_short()
+                self.assertEqual(events.events.get_nowait(), f"{name}_short")
+                self.assertTrue(events.events.empty())
+
+    def test_each_physical_button_emits_its_own_long_event(self):
+        for name in ("button1", "button2", "button3"):
+            with self.subTest(name=name):
+                events = self.make_events()
+                events.pressed_at[name] = time.monotonic() - 3.1
+                events._released(name)
+                self.assertEqual(events.events.get_nowait(), f"{name}_long")
+                self.assertTrue(events.events.empty())
 
     def test_ten_second_combo_emits_reset_only(self):
         events = self.make_events()
