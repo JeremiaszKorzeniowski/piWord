@@ -299,14 +299,16 @@ def run_hardware(database_path: Path) -> None:
                     topic,
                 )
             elif event == "button2_long":
-                stats = store.statistics()
+                stats = store.statistics(mode=mode, level=level, topic=topic)
                 display.show_status(
                     "STATYSTYKI",
                     [
-                        f"Dzisiaj: {stats['today']}/{DAILY_GOAL}",
-                        f"Umiem: {stats['learned']}",
-                        f"Trudne: {stats['difficult']}",
-                        f"W bazie: {stats['total']}",
+                        f"Jezyk: {MODE_LABELS[mode]}",
+                        f"Poziom: {level or 'ALL'}",
+                        f"Temat: {TOPIC_LABELS.get(topic, 'WSZYSTKIE')}",
+                        f"Dzisiaj w zakresie: {stats['today']}",
+                        f"Umiem: {stats['learned']}  Trudne: {stats['difficult']}",
+                        f"W zbiorze: {stats['total']}",
                     ],
                 )
             elif event == "reset_progress":

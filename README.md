@@ -142,6 +142,9 @@ xdb                       # liczba fiszek w każdym poziomie
 xdb search go             # szukanie w słowie, formach i tłumaczeniu
 xdb list A1 --limit 50    # lista słów z poziomu A1
 xdb card 123              # wszystkie pola rekordu o ID 123
+xdb stats                 # postęp według języka i wszystkich tematów
+xdb stats --mode en_pl    # tematy tylko dla angielskiego
+xdb stats --topic COLORS  # szczegóły wybranego tematu we wszystkich językach
 ```
 
 SQLite nie jest serwerem, więc tunel SSH w DBeaver nie wystarczy. Aby otworzyć

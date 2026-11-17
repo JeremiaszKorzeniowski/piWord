@@ -498,7 +498,12 @@ class CardStore:
             ).fetchone()
         return bool(row and row[0])
 
-    def statistics(self) -> dict[str, int]:
+    def statistics(
+        self,
+        mode: str | None = None,
+        level: str | None = None,
+        topic: str | None = None,
+    ) -> dict[str, int]:
         today = time.strftime("%Y-%m-%d")
         with self.connect() as connection:
             row = connection.execute(
@@ -506,8 +511,14 @@ class CardStore:
                           SUM(CASE WHEN learned != 0 THEN 1 ELSE 0 END) AS learned,
                           SUM(CASE WHEN difficult != 0 THEN 1 ELSE 0 END) AS difficult,
                           SUM(CASE WHEN introduced_on = ? THEN 1 ELSE 0 END) AS today
-                   FROM cards""",
-                (today,),
+                   FROM cards
+                   WHERE (? IS NULL OR mode = ?)
+                     AND (? IS NULL OR level = ?)
+                     AND (? IS NULL OR EXISTS (
+                         SELECT 1 FROM card_topics
+                         WHERE card_id = cards.id AND topic = ?
+                     ))""",
+                (today, mode, mode, level, level, topic, topic),
             ).fetchone()
         return {name: int(row[name] or 0) for name in ("total", "learned", "difficult", "today")}
 

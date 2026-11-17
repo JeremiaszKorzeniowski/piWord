@@ -1,4 +1,6 @@
 from pathlib import Path
+from contextlib import redirect_stdout
+from io import StringIO
 import queue
 import threading
 import time
@@ -8,6 +10,7 @@ import unittest
 from piword.app import ButtonEvents
 from piword.cards import TOPICS, Card, CardStore
 from piword.display import card_header
+from tools.db_view import thematic_statistics
 
 
 class CardStoreTests(unittest.TestCase):
@@ -124,6 +127,27 @@ class CardStoreTests(unittest.TestCase):
                 }
             self.assertIn("COLORS", topics)
             self.assertEqual(store.available_levels("en_pl", "DAYS"), ["A1"])
+
+    def test_statistics_can_be_filtered_by_language_level_and_topic(self):
+        with TemporaryDirectory() as directory:
+            store = CardStore(Path(directory) / "cards.db")
+            store.initialize()
+            card = store.next_card(mode="en_pl", level="A1", topic="COLORS")
+            store.mark_seen(card.id)
+            store.mark_learned(card.id)
+
+            stats = store.statistics(mode="en_pl", level="A1", topic="COLORS")
+            self.assertGreater(stats["total"], 0)
+            self.assertEqual(stats["learned"], 1)
+            self.assertEqual(stats["today"], 1)
+
+            output = StringIO()
+            with store.connect() as connection, redirect_stdout(output):
+                thematic_statistics(connection, mode="en_pl", topic="COLORS")
+            report = output.getvalue()
+            self.assertIn("EN -> PL", report)
+            self.assertIn("KOLORY", report)
+            self.assertIn("postep", report)
 
 
 class ButtonEventTests(unittest.TestCase):

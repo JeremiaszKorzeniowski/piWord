@@ -11,6 +11,11 @@ main() {
 
     cd "$project_dir"
 
+    mkdir -p "$HOME/.local/bin"
+    ln -sfn "$project_dir/scripts/update.sh" "$HOME/.local/bin/xd"
+    ln -sfn "$project_dir/scripts/update.sh" "$HOME/.local/bin/xdver"
+    ln -sfn "$project_dir/scripts/db.sh" "$HOME/.local/bin/xdb"
+
     if [[ "$(git branch --show-current)" != "main" ]]; then
         echo "Aktualizacja wymaga galezi main."
         exit 1

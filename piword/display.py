@@ -125,8 +125,11 @@ def render_status(title: str, lines: list[str]) -> Image.Image:
     draw = ImageDraw.Draw(image)
     draw.text((6, 4), title, font=_font(15, bold=True), fill=0)
     draw.line((5, 23, WIDTH - 6, 23), fill=0, width=1)
-    for index, line in enumerate(lines[:5]):
-        draw.text((8, 29 + index * 18), line, font=_font(13), fill=0)
+    compact = len(lines) > 5
+    line_font = _font(11 if compact else 13)
+    line_step = 14 if compact else 18
+    for index, line in enumerate(lines[:6]):
+        draw.text((8, 27 + index * line_step), line, font=line_font, fill=0)
     return image
 
 

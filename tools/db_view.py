@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from piword.cards import default_database_path
+from piword.cards import MODE_LABELS, MODES, TOPICS, TOPIC_LABELS, default_database_path
 
 
 def open_read_only(path: Path) -> sqlite3.Connection:
@@ -20,12 +20,10 @@ def open_read_only(path: Path) -> sqlite3.Connection:
     return connection
 
 
-def print_rows(rows: list[sqlite3.Row]) -> None:
-    if not rows:
+def print_table(headers: list[str], values: list[list[str]]) -> None:
+    if not values:
         print("Brak wyników.")
         return
-    headers = list(rows[0].keys())
-    values = [[str(row[name] if row[name] is not None else "") for name in headers] for row in rows]
     widths = [
         min(60, max(len(header), *(len(row[index]) for row in values)))
         for index, header in enumerate(headers)
@@ -34,6 +32,18 @@ def print_rows(rows: list[sqlite3.Row]) -> None:
     print("  ".join("-" * width for width in widths))
     for row in values:
         print("  ".join(value[:widths[index]].ljust(widths[index]) for index, value in enumerate(row)))
+
+
+def print_rows(rows: list[sqlite3.Row]) -> None:
+    if not rows:
+        print("Brak wyników.")
+        return
+    headers = list(rows[0].keys())
+    values = [
+        [str(row[name] if row[name] is not None else "") for name in headers]
+        for row in rows
+    ]
+    print_table(headers, values)
 
 
 def summary(connection: sqlite3.Connection) -> None:
@@ -59,6 +69,92 @@ def summary(connection: sqlite3.Connection) -> None:
     print_rows(rows)
 
 
+def thematic_statistics(
+    connection: sqlite3.Connection,
+    mode: str | None = None,
+    topic: str | None = None,
+) -> None:
+    mode_label = MODE_LABELS.get(mode, "WSZYSTKIE")
+    topic_label = TOPIC_LABELS.get(topic, "WSZYSTKIE")
+    print(f"Statystyki: jezyk={mode_label}; temat={topic_label}\n")
+
+    language_rows = connection.execute(
+        """SELECT mode,
+                  COUNT(*) AS total,
+                  SUM(introduced_on IS NOT NULL) AS introduced,
+                  SUM(learned != 0) AS learned,
+                  SUM(difficult != 0) AS difficult,
+                  SUM(introduced_on = date('now', 'localtime')) AS today
+           FROM cards
+           WHERE (? IS NULL OR mode = ?)
+             AND (? IS NULL OR EXISTS (
+                 SELECT 1 FROM card_topics
+                 WHERE card_id = cards.id AND topic = ?
+             ))
+           GROUP BY mode ORDER BY mode""",
+        (mode, mode, topic, topic),
+    ).fetchall()
+    language_values = []
+    for row in language_rows:
+        total = int(row["total"] or 0)
+        learned = int(row["learned"] or 0)
+        language_values.append(
+            [
+                MODE_LABELS.get(row["mode"], row["mode"]),
+                str(total),
+                str(int(row["introduced"] or 0)),
+                str(learned),
+                str(int(row["difficult"] or 0)),
+                str(int(row["today"] or 0)),
+                f"{(100 * learned / total):.1f}%" if total else "0.0%",
+            ]
+        )
+    print("JEZYKI")
+    print_table(
+        ["jezyk", "fiszki", "poznane", "umiem", "trudne", "dzisiaj", "postep"],
+        language_values,
+    )
+
+    topic_rows = connection.execute(
+        """SELECT card_topics.topic,
+                  COUNT(*) AS total,
+                  SUM(cards.introduced_on IS NOT NULL) AS introduced,
+                  SUM(cards.learned != 0) AS learned,
+                  SUM(cards.difficult != 0) AS difficult,
+                  SUM(cards.introduced_on = date('now', 'localtime')) AS today
+           FROM card_topics
+           JOIN cards ON cards.id = card_topics.card_id
+           WHERE (? IS NULL OR cards.mode = ?)
+             AND (? IS NULL OR card_topics.topic = ?)
+           GROUP BY card_topics.topic ORDER BY card_topics.topic""",
+        (mode, mode, topic, topic),
+    ).fetchall()
+    topic_by_name = {str(row["topic"]): row for row in topic_rows}
+    topic_values = []
+    for topic_name in TOPICS:
+        row = topic_by_name.get(topic_name)
+        if row is None:
+            continue
+        total = int(row["total"] or 0)
+        learned = int(row["learned"] or 0)
+        topic_values.append(
+            [
+                TOPIC_LABELS.get(topic_name, topic_name),
+                str(total),
+                str(int(row["introduced"] or 0)),
+                str(learned),
+                str(int(row["difficult"] or 0)),
+                str(int(row["today"] or 0)),
+                f"{(100 * learned / total):.1f}%" if total else "0.0%",
+            ]
+        )
+    print("\nTEMATY")
+    print_table(
+        ["temat", "fiszki", "poznane", "umiem", "trudne", "dzisiaj", "postep"],
+        topic_values,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="xdb", description="Podgląd bazy piWord przez SSH")
     parser.add_argument("--database", type=Path, default=default_database_path())
@@ -74,6 +170,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     card = commands.add_parser("card", help="pokaż jeden rekord po ID")
     card.add_argument("id", type=int)
+
+    stats = commands.add_parser("stats", help="statystyki według języka i tematu")
+    stats.add_argument("--mode", choices=MODES)
+    stats.add_argument("--topic", choices=TOPICS)
 
     snapshot = commands.add_parser("snapshot", help="utwórz spójną kopię dla DBeaver")
     snapshot.add_argument("output", nargs="?", type=Path)
@@ -108,6 +208,8 @@ def main() -> None:
                 "SELECT * FROM cards WHERE id = ?", (args.id,)
             ).fetchall()
             print_rows(rows)
+        elif args.command == "stats":
+            thematic_statistics(connection, mode=args.mode, topic=args.topic)
         elif args.command == "snapshot":
             output = args.output or Path.home() / (
                 "piword-" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".db"
